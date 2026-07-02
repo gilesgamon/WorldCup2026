@@ -260,7 +260,7 @@
 <body>
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.4</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.5</div>
     </div>
 
     <div class="timezone-selector">
@@ -305,7 +305,7 @@
                 <option value="Africa/Johannesburg">Johannesburg (SAST)</option>
             </optgroup>
         </select>
-        <span style="font-size: 10px; opacity: 0.6; margin-left: 8px;">Times converted from US EDT</span>
+        <span style="font-size: 10px; opacity: 0.6; margin-left: 8px;">Times converted from US MDT</span>
     </div>
 
     <div class="controls">
@@ -383,15 +383,18 @@
 
         function parseMatchDate(dateString) {
             // Parse "06/11/2026 13:00" format
-            // API provides times in tournament local time (assumed US Eastern Time for 2026 World Cup)
+            // API provides times in local timezone for each match (varies across US/Canada/Mexico)
+            // Most matches appear to be in Mountain Daylight Time (MDT, UTC-6)
             const [datePart, timePart] = dateString.split(' ');
             const [month, day, year] = datePart.split('/');
             const [hours, minutes] = timePart.split(':');
             
-            // Create date object treating the time as US Eastern Time (UTC-4/UTC-5)
-            // We'll use UTC-4 (EDT - Eastern Daylight Time) as June-July are in daylight saving
-            const utcHours = parseInt(hours) + 4; // Add 4 hours to convert EDT to UTC
-            const isoString = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${String(utcHours).padStart(2, '0')}:${minutes.padStart(2, '0')}:00Z`;
+            // Create date object treating the time as MDT (UTC-6)
+            const utcHours = parseInt(hours) + 6; // Add 6 hours to convert MDT to UTC
+            const adjustedDay = utcHours >= 24 ? parseInt(day) + 1 : parseInt(day);
+            const finalHours = utcHours >= 24 ? utcHours - 24 : utcHours;
+            
+            const isoString = `${year}-${month.padStart(2, '0')}-${String(adjustedDay).padStart(2, '0')}T${String(finalHours).padStart(2, '0')}:${minutes.padStart(2, '0')}:00Z`;
             return new Date(isoString);
         }
 
