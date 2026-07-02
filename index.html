@@ -260,7 +260,7 @@
 <body>
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.3</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.4</div>
     </div>
 
     <div class="timezone-selector">
@@ -305,6 +305,7 @@
                 <option value="Africa/Johannesburg">Johannesburg (SAST)</option>
             </optgroup>
         </select>
+        <span style="font-size: 10px; opacity: 0.6; margin-left: 8px;">Times converted from US EDT</span>
     </div>
 
     <div class="controls">
@@ -382,14 +383,15 @@
 
         function parseMatchDate(dateString) {
             // Parse "06/11/2026 13:00" format
-            // The API provides times in tournament local time (US/Canada/Mexico)
-            // We'll treat them as UTC for consistency and let the browser convert
+            // API provides times in tournament local time (assumed US Eastern Time for 2026 World Cup)
             const [datePart, timePart] = dateString.split(' ');
             const [month, day, year] = datePart.split('/');
             const [hours, minutes] = timePart.split(':');
             
-            // Create ISO string and parse as UTC
-            const isoString = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}:00Z`;
+            // Create date object treating the time as US Eastern Time (UTC-4/UTC-5)
+            // We'll use UTC-4 (EDT - Eastern Daylight Time) as June-July are in daylight saving
+            const utcHours = parseInt(hours) + 4; // Add 4 hours to convert EDT to UTC
+            const isoString = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${String(utcHours).padStart(2, '0')}:${minutes.padStart(2, '0')}:00Z`;
             return new Date(isoString);
         }
 
