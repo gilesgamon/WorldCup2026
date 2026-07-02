@@ -142,6 +142,17 @@
             border-radius: 4px;
             white-space: nowrap;
             border: 1px solid rgba(255, 255, 255, 0.1);
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        @media (max-width: 768px) {
+            .match-time {
+                font-size: 9px;
+                padding: 3px 6px;
+                max-width: 120px;
+            }
         }
 
         .match-time.live {
@@ -260,7 +271,7 @@
 <body>
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.5</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.6</div>
     </div>
 
     <div class="timezone-selector">
@@ -632,8 +643,12 @@
                             timeDiv.textContent = formatMatchTime(match.local_date);
                         }
                         
+                        // Add offset to prevent overlapping on mobile
+                        // Alternate above and below the match point, with increasing offset
+                        const verticalOffset = (matchIdx % 2 === 0 ? 1 : -1) * (25 + (matchIdx % 4) * 5);
+                        
                         timeDiv.style.left = mx + 'px';
-                        timeDiv.style.top = my + 'px';
+                        timeDiv.style.top = (my + verticalOffset) + 'px';
                         timesContainer.appendChild(timeDiv);
                     }
                 });
