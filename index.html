@@ -277,12 +277,130 @@
             z-index: 200;
             white-space: nowrap;
         }
+
+        /* Full-screen error: joke on one side, the underlying technical detail on
+           the other. Stacks vertically on narrow screens. */
+        .error-split {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: stretch;
+            justify-content: center;
+            max-width: 720px;
+            margin: 0 auto;
+            text-align: left;
+        }
+
+        .error-split .error-joke,
+        .error-split .error-underlying {
+            flex: 1 1 260px;
+            min-width: 240px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 10px;
+            padding: 18px 20px;
+        }
+
+        .error-split .error-underlying {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .error-split .error-emoji {
+            font-size: 2.2em;
+            margin-bottom: 8px;
+        }
+
+        .error-split h3 {
+            margin-bottom: 8px;
+            font-size: 1.1em;
+        }
+
+        .error-split .label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            opacity: 0.5;
+            margin-bottom: 8px;
+        }
+
+        .error-split code {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        .error-split .detail-line {
+            font-size: 13px;
+            opacity: 0.8;
+            margin-bottom: 6px;
+        }
+
+        /* Non-blocking banner shown over stale cached data during an outage. */
+        .outage-banner {
+            position: fixed;
+            top: 110px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: min(92vw, 640px);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 16px;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(30, 20, 0, 0.92);
+            border: 1px solid rgba(255, 200, 80, 0.35);
+            border-radius: 10px;
+            padding: 10px 14px;
+            z-index: 300;
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+        }
+
+        .outage-banner .ob-joke {
+            flex: 1 1 220px;
+            min-width: 200px;
+            font-size: 13px;
+        }
+
+        .outage-banner .ob-joke .ob-headline {
+            font-weight: 600;
+        }
+
+        .outage-banner .ob-underlying {
+            flex: 1 1 200px;
+            min-width: 180px;
+            font-size: 11px;
+            opacity: 0.75;
+            text-align: right;
+        }
+
+        .outage-banner .ob-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .outage-banner .ob-close {
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 18px;
+            cursor: pointer;
+            line-height: 1;
+            padding: 0 4px;
+        }
+
+        @media (max-width: 600px) {
+            .outage-banner .ob-underlying {
+                text-align: left;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.12</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.0</div>
     </div>
 
     <div class="timezone-selector">
@@ -353,6 +471,46 @@
         let allMatches = [], allTeams = [];
         let selectedTimezone = 'auto'; // Store the selected timezone
 
+        // --- Polling / resilience state ---
+        const CACHE_KEY = 'wc2026_cache_v1';
+        const POLL_BASE_MS = 60000;          // normal refresh cadence
+        const POLL_MAX_MS = 10 * 60000;      // cap the backoff at 10 minutes
+        let consecutiveFailures = 0;         // drives exponential backoff
+        let pollTimeout = null;              // handle for the next scheduled poll
+        let isFetching = false;              // guard against overlapping fetches
+        let bannerDismissed = false;         // user closed the outage banner
+
+        function loadCache() {
+            try {
+                const raw = localStorage.getItem(CACHE_KEY);
+                if (!raw) return null;
+                const data = JSON.parse(raw);
+                if (data && Array.isArray(data.games) && Array.isArray(data.teams)) {
+                    return data;
+                }
+            } catch (e) { /* ignore corrupt/unavailable storage */ }
+            return null;
+        }
+
+        function saveCache(games, teams) {
+            try {
+                localStorage.setItem(CACHE_KEY, JSON.stringify({
+                    games, teams, savedAt: Date.now()
+                }));
+            } catch (e) { /* storage may be full or blocked; non-fatal */ }
+        }
+
+        function timeAgo(ts) {
+            if (!ts) return 'an unknown time ago';
+            const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+            if (s < 60) return `${s}s ago`;
+            const m = Math.floor(s / 60);
+            if (m < 60) return `${m} min ago`;
+            const h = Math.floor(m / 60);
+            if (h < 24) return `${h} hr ago`;
+            return `${Math.floor(h / 24)} day(s) ago`;
+        }
+
         // Pre-calculated positions for clean bracket layout
         // Rotated so semi-finals are horizontal (0° and 180°)
         const KNOCKOUT_POSITIONS = {
@@ -409,6 +567,8 @@
         const DEFAULT_VENUE_TIMEZONE = 'America/Chicago';
 
         async function fetchData() {
+            if (isFetching) return;
+            isFetching = true;
             try {
                 const [matchesRes, teamsRes] = await Promise.all([
                     fetch(`${API_BASE}/get/games`),
@@ -437,12 +597,57 @@
 
                 console.log('Loaded:', allMatches.length, 'matches,', allTeams.length, 'teams');
 
+                // Cache the good response so we can keep showing data during outages.
+                saveCache(allMatches, allTeams);
+                consecutiveFailures = 0;
+                bannerDismissed = false;
+                hideOutageBanner();
+
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('wheelContainer').style.display = 'block';
                 
                 renderWheel();
             } catch (error) {
                 console.error('Error:', error);
+                consecutiveFailures++;
+                handleFetchError(error);
+            } finally {
+                isFetching = false;
+                scheduleNextPoll();
+            }
+        }
+
+        function computePollDelay() {
+            if (consecutiveFailures === 0) return POLL_BASE_MS;
+            // Exponential backoff: 60s, 120s, 240s ... capped at POLL_MAX_MS.
+            const delay = POLL_BASE_MS * Math.pow(2, consecutiveFailures - 1);
+            return Math.min(delay, POLL_MAX_MS);
+        }
+
+        function scheduleNextPoll() {
+            clearTimeout(pollTimeout);
+            // Don't poll while the tab is hidden — we resume on visibilitychange.
+            if (document.hidden) return;
+            pollTimeout = setTimeout(fetchData, computePollDelay());
+        }
+
+        // Decide what to show when a fetch fails: if we have cached data, keep the
+        // wheel on screen and show a non-blocking banner; otherwise show the full
+        // split error screen (joke + underlying detail).
+        function handleFetchError(error) {
+            const cached = loadCache();
+            const haveData = allMatches.length > 0 && allTeams.length > 0;
+
+            if (haveData || cached) {
+                if (!haveData && cached) {
+                    allMatches = cached.games;
+                    allTeams = cached.teams;
+                }
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('wheelContainer').style.display = 'block';
+                renderWheel();
+                showOutageBanner(error, cached ? cached.savedAt : null);
+            } else {
                 showErrorMessage(error);
             }
         }
@@ -523,35 +728,117 @@
             { emoji: '🧳💰', headline: 'The servers absconded with the qualifying funds', sub: 'Try again shortly.' }
         ];
 
-        function pickApiDownJoke() {
+        // Special set for HTTP 429 (rate limited) — i.e. Giles's page got so
+        // popular it tripped the API's "max 1000 requests per IP / minute" limit.
+        const RATE_LIMIT_JOKES = [
+            { emoji: '🌟🔥', headline: 'Giles\'s page got too popular for its own good', sub: 'So many visitors the API tapped out. Give it a minute.' },
+            { emoji: '🚀📈', headline: 'Fame at last — you\'ve been rate-limited', sub: 'The API is throttling us because everyone showed up at once.' },
+            { emoji: '🎉🚦', headline: 'Too many fans! The API hit the brakes', sub: 'We\'re over the requests-per-minute limit. Back shortly.' },
+            { emoji: '🏟️🚪', headline: 'The stadium\'s full — queue\'s out the door', sub: 'Rate limit reached. Try again in a moment.' },
+            { emoji: '💫⏳', headline: 'Slow down, superstar — the API needs a breather', sub: 'Too many requests from this crowd. It\'ll cool off soon.' },
+            { emoji: '📣🔥', headline: 'Word got out, and now everyone\'s here', sub: 'We\'ve been temporarily rate-limited. Hang tight.' },
+            { emoji: '🥵📶', headline: 'The server is overwhelmed by your popularity', sub: 'Hit the 1000-requests-a-minute cap. Give it a sec.' },
+            { emoji: '🎢🚦', headline: 'Whoa there — that\'s a lot of traffic', sub: 'Rate limit exceeded. The queue will clear shortly.' }
+        ];
+
+        function pickJoke(error) {
+            const status = (error instanceof ApiError) ? error.status : null;
+            if (status === 429) {
+                return RATE_LIMIT_JOKES[Math.floor(Math.random() * RATE_LIMIT_JOKES.length)];
+            }
             return API_DOWN_JOKES[Math.floor(Math.random() * API_DOWN_JOKES.length)];
+        }
+
+        // Human-readable explanation of what actually went wrong, for the
+        // "underlying" side of the split. Returns { title, lines: [] }.
+        function describeUnderlying(error, savedAt) {
+            const isApiError = error instanceof ApiError;
+            const status = isApiError ? error.status : null;
+            const lines = [];
+
+            if (status === 429) {
+                lines.push('The API returned <code>429 Too Many Requests</code>.');
+                lines.push('Public endpoints allow up to 1000 requests per IP per minute; that limit was hit.');
+            } else if (status === 502 || status === 503 || status === 504) {
+                lines.push(`The API gateway returned <code>${status}</code>.`);
+                lines.push('The upstream World Cup data service is unreachable (a known load issue on their free host).');
+            } else if (status >= 500) {
+                lines.push(`The API returned <code>${status}</code> (server error).`);
+            } else if (status === 401 || status === 403) {
+                lines.push(`The API returned <code>${status}</code> (authorization).`);
+            } else if (isApiError && status) {
+                lines.push(`The API returned <code>HTTP ${status}</code>.`);
+            } else {
+                lines.push('The live data feed couldn\'t be reached (network error).');
+                console.info('Tip: if running locally, serve over HTTP, e.g. `python3 -m http.server 8000`');
+            }
+
+            if (savedAt) {
+                lines.push(`Showing the last saved data from <strong>${timeAgo(savedAt)}</strong>.`);
+            }
+
+            return { status, lines };
         }
 
         function showErrorMessage(error) {
             const loading = document.getElementById('loading');
-            const isApiError = error instanceof ApiError;
-            const statusNote = (isApiError && error.status)
-                ? `The live data feed returned HTTP ${error.status}.`
-                : 'Couldn\'t reach the live data feed.';
+            const joke = pickJoke(error);
+            const info = describeUnderlying(error, null);
 
-            const joke = pickApiDownJoke();
-
-            // For genuine network errors the page might have been opened directly
-            // from disk. Keep that hint for developers in the console only — it's
-            // not useful to end users, so it no longer appears on screen.
-            if (!isApiError) {
-                console.info('Tip: if running locally, serve over HTTP, e.g. `python3 -m http.server 8000`');
-            }
+            const detailHtml = info.lines.map(l => `<div class="detail-line">${l}</div>`).join('');
 
             loading.innerHTML = `
-                <div style="max-width: 400px; margin: 0 auto;">
-                    <div style="font-size: 2.5em; margin-bottom: 10px;">${joke.emoji}</div>
-                    <h3 style="margin-bottom: 8px;">${joke.headline}</h3>
-                    <p style="opacity: 0.75;">${joke.sub}</p>
-                    <p style="font-size: 12px; opacity: 0.6; margin-top: 10px;">${statusNote}</p>
-                    <button class="btn" style="margin-top: 16px;" onclick="refreshData()">🔄 Try again</button>
+                <div class="error-split">
+                    <div class="error-joke">
+                        <div class="error-emoji">${joke.emoji}</div>
+                        <h3>${joke.headline}</h3>
+                        <p style="opacity: 0.75;">${joke.sub}</p>
+                    </div>
+                    <div class="error-underlying">
+                        <div class="label">What's actually happening</div>
+                        ${detailHtml}
+                        <button class="btn" style="margin-top: 14px;" onclick="refreshData()">🔄 Try again</button>
+                    </div>
                 </div>
             `;
+        }
+
+        function showOutageBanner(error, savedAt) {
+            if (bannerDismissed) return;
+            const joke = pickJoke(error);
+            const info = describeUnderlying(error, savedAt);
+            const detailHtml = info.lines.map(l => `<div>${l}</div>`).join('');
+
+            let banner = document.getElementById('outageBanner');
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.id = 'outageBanner';
+                banner.className = 'outage-banner';
+                document.body.appendChild(banner);
+            }
+
+            banner.innerHTML = `
+                <div class="ob-joke">
+                    <div class="ob-headline">${joke.emoji} ${joke.headline}</div>
+                    <div style="opacity: 0.75;">${joke.sub}</div>
+                </div>
+                <div class="ob-underlying">${detailHtml}</div>
+                <div class="ob-actions">
+                    <button class="btn" onclick="refreshData()">🔄 Retry</button>
+                    <button class="ob-close" title="Dismiss" onclick="dismissOutageBanner()">×</button>
+                </div>
+            `;
+            banner.style.display = 'flex';
+        }
+
+        function hideOutageBanner() {
+            const banner = document.getElementById('outageBanner');
+            if (banner) banner.style.display = 'none';
+        }
+
+        function dismissOutageBanner() {
+            bannerDismissed = true;
+            hideOutageBanner();
         }
 
         function getTimeZoneOffsetMs(utcDate, timeZone) {
@@ -993,11 +1280,15 @@
         }
 
         function refreshData() {
-            const loading = document.getElementById('loading');
-            // Restore the spinner in case an error card is currently shown.
-            loading.innerHTML = '<div class="spinner"></div><div>Loading tournament data...</div>';
-            loading.style.display = 'block';
-            document.getElementById('wheelContainer').style.display = 'none';
+            const wheelVisible = document.getElementById('wheelContainer').style.display === 'block';
+            // If cached data is already on screen, keep it visible and just refetch
+            // in the background. Only fall back to the spinner when there's nothing
+            // to show yet (e.g. the full error screen).
+            if (!wheelVisible) {
+                const loading = document.getElementById('loading');
+                loading.innerHTML = '<div class="spinner"></div><div>Loading tournament data...</div>';
+                loading.style.display = 'block';
+            }
             fetchData();
         }
 
@@ -1018,8 +1309,32 @@
             selectedTimezone = 'auto';
         }
         
+        // Show cached data immediately (if any) so returning visitors see the wheel
+        // right away instead of a spinner, then refresh in the background.
+        const cachedOnLoad = loadCache();
+        if (cachedOnLoad) {
+            allMatches = cachedOnLoad.games;
+            allTeams = cachedOnLoad.teams;
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('wheelContainer').style.display = 'block';
+            renderWheel();
+        }
+
+        // Pause polling while the tab is hidden (no point hammering the API when
+        // nobody's looking); resume with an immediate refresh when it returns.
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                clearTimeout(pollTimeout);
+            } else if (!isFetching) {
+                fetchData();
+            } else {
+                // A fetch is already running; make sure the loop stays alive.
+                scheduleNextPoll();
+            }
+        });
+
+        // Kicks off the self-scheduling poll loop (backs off on failure).
         fetchData();
-        setInterval(fetchData, 60000);
     </script>
 </body>
 </html>
