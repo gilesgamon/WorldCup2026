@@ -395,9 +395,96 @@
                 text-align: left;
             }
         }
+
+        .canada-timer {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 12px 16px;
+            min-width: 180px;
+            z-index: 100;
+        }
+
+        .canada-timer .timer-header {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            opacity: 0.9;
+            text-align: center;
+        }
+
+        .canada-timer .timer-match {
+            font-size: 12px;
+            padding: 6px 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .canada-timer .timer-match:first-of-type {
+            border-top: none;
+        }
+
+        .canada-timer .match-teams {
+            flex: 1;
+            opacity: 0.8;
+        }
+
+        .canada-timer .match-when {
+            font-weight: 600;
+            font-size: 11px;
+            padding: 2px 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+
+        .canada-timer .match-when.today {
+            color: #4ade80;
+            background: rgba(74, 222, 128, 0.15);
+        }
+
+        .canada-timer .match-when.tomorrow {
+            color: #60a5fa;
+            background: rgba(96, 165, 250, 0.15);
+        }
+
+        .canada-timer .no-matches {
+            font-size: 11px;
+            opacity: 0.6;
+            text-align: center;
+            padding: 4px 0;
+        }
+
+        @media (max-width: 768px) {
+            .canada-timer {
+                top: 10px;
+                right: 10px;
+                min-width: 160px;
+                padding: 10px 12px;
+            }
+            
+            .canada-timer .timer-header {
+                font-size: 12px;
+            }
+            
+            .canada-timer .timer-match {
+                font-size: 11px;
+            }
+        }
     </style>
 </head>
 <body>
+    <div class="canada-timer" id="canadaTimer">
+        <div class="timer-header">🍁 Canada Matches</div>
+        <div id="canadaMatches"></div>
+    </div>
+
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
         <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.0</div>
@@ -947,6 +1034,101 @@
             }
         }
 
+        function updateCanadaTimer() {
+            const container = document.getElementById('canadaMatches');
+            if (!container) return;
+
+            // Canadian stadium IDs: Toronto (12) and Vancouver (13)
+            const canadianStadiumIds = ['12', '13'];
+            
+            // Get Canadian matches that haven't finished
+            const canadaMatches = allMatches
+                .filter(m => 
+                    canadianStadiumIds.includes(String(m.stadium_id)) &&
+                    m.finished !== 'TRUE' &&
+                    m.time_elapsed !== 'finished'
+                )
+                .map(m => {
+                    try {
+                        const matchDate = parseMatchDate(m.local_date, m.stadium_id);
+                        return { ...m, parsedDate: matchDate };
+                    } catch (e) {
+                        return null;
+                    }
+                })
+                .filter(m => m !== null)
+                .sort((a, b) => a.parsedDate - b.parsedDate);
+
+            if (canadaMatches.length === 0) {
+                container.innerHTML = '<div class="no-matches">No upcoming matches</div>';
+                return;
+            }
+
+            // Get today and tomorrow boundaries in user's timezone
+            const now = new Date();
+            const userTz = getUserTimezone();
+            
+            // Get start of today in user's timezone
+            const todayStart = new Date(now.toLocaleString('en-US', { timeZone: userTz }));
+            todayStart.setHours(0, 0, 0, 0);
+            
+            // Get start of tomorrow
+            const tomorrowStart = new Date(todayStart);
+            tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+            
+            // Get start of day after tomorrow
+            const dayAfterStart = new Date(todayStart);
+            dayAfterStart.setDate(dayAfterStart.getDate() + 2);
+
+            let html = '';
+            
+            // Show up to 5 upcoming Canadian matches
+            canadaMatches.slice(0, 5).forEach(match => {
+                const team1 = allTeams.find(t => t.id === match.home_team_id);
+                const team2 = allTeams.find(t => t.id === match.away_team_id);
+                
+                const team1Name = team1 ? (team1.fifa_code || team1.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
+                const team2Name = team2 ? (team2.fifa_code || team2.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
+                
+                const teams = `${team1Name} vs ${team2Name}`;
+                
+                // Determine if match is today or tomorrow
+                const matchTime = match.parsedDate.getTime();
+                const todayTime = todayStart.getTime();
+                const tomorrowTime = tomorrowStart.getTime();
+                const dayAfterTime = dayAfterStart.getTime();
+                
+                let whenLabel = '';
+                let whenClass = '';
+                
+                if (matchTime >= todayTime && matchTime < tomorrowTime) {
+                    whenLabel = 'Today';
+                    whenClass = 'today';
+                } else if (matchTime >= tomorrowTime && matchTime < dayAfterTime) {
+                    whenLabel = 'Tomorrow';
+                    whenClass = 'tomorrow';
+                } else {
+                    // For matches beyond tomorrow, show the date
+                    const dateStr = match.parsedDate.toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        timeZone: userTz
+                    });
+                    whenLabel = dateStr;
+                    whenClass = '';
+                }
+                
+                html += `
+                    <div class="timer-match">
+                        <div class="match-teams">${teams}</div>
+                        <div class="match-when ${whenClass}">${whenLabel}</div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+
         function renderWheel() {
             const container = document.getElementById('wheelContainer');
             const size = container.clientWidth;
@@ -1171,6 +1353,9 @@
             // measures the real rendered boxes and resolves any remaining
             // collisions (important on phones where the wheel is small).
             resolveLabelOverlaps(timesContainer);
+
+            // Update the Canada timer
+            updateCanadaTimer();
         }
 
         function resolveLabelOverlaps(container, iterations = 20) {
