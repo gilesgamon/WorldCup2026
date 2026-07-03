@@ -282,7 +282,7 @@
 <body>
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.10</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.11</div>
     </div>
 
     <div class="timezone-selector">
@@ -457,12 +457,34 @@
             }
         }
 
+        // Rotating set of tongue-in-cheek "API is down" jokes, with a healthy
+        // hint of FIFA's, ahem, colourful financial reputation. One is picked at
+        // random each time the error screen is shown.
+        const API_DOWN_JOKES = [
+            { emoji: '🏆💸', headline: 'FIFA spent the money on the trophy, not the API', sub: 'The World Cup data service is down right now.' },
+            { emoji: '🤝💼', headline: 'The API is in a Swiss bank account and won\'t come out', sub: 'Suspiciously unavailable. Try again shortly.' },
+            { emoji: '📦💰', headline: 'The server was last seen leaving in a brown envelope', sub: 'Nobody at FIFA is answering questions right now.' },
+            { emoji: '🕵️💵', headline: 'This endpoint is helping authorities with their enquiries', sub: 'The live data feed is temporarily unavailable.' },
+            { emoji: '🗳️🤑', headline: 'The API vote went to Qatar; your request did not', sub: 'Couldn\'t load the match data this time.' },
+            { emoji: '🏝️💸', headline: 'The database is on an all-expenses-paid trip', sub: 'It\'ll be back once the "consultancy fees" clear.' },
+            { emoji: '📉🧾', headline: 'Our data provider is under investigation (again)', sub: 'The World Cup feed isn\'t responding.' },
+            { emoji: '🤐💶', headline: 'The server accepted a generous offer to stay quiet', sub: 'No response from the live data feed.' },
+            { emoji: '⚽💰', headline: 'Somewhere, a blazer just bought a new yacht', sub: 'Meanwhile, the API is completely offline.' },
+            { emoji: '🎁🏦', headline: 'Request denied — did you forget the "gift"?', sub: 'The data service is unavailable right now.' }
+        ];
+
+        function pickApiDownJoke() {
+            return API_DOWN_JOKES[Math.floor(Math.random() * API_DOWN_JOKES.length)];
+        }
+
         function showErrorMessage(error) {
             const loading = document.getElementById('loading');
             const isApiError = error instanceof ApiError;
             const statusNote = (isApiError && error.status)
                 ? `The live data feed returned HTTP ${error.status}.`
                 : 'Couldn\'t reach the live data feed.';
+
+            const joke = pickApiDownJoke();
 
             // If it's a genuine network error (not an API status error) it *might*
             // be that the page was opened directly from disk, so keep that hint —
@@ -472,10 +494,10 @@
                 : '';
 
             loading.innerHTML = `
-                <div style="max-width: 380px; margin: 0 auto;">
-                    <div style="font-size: 2.5em; margin-bottom: 10px;">🏆💸</div>
-                    <h3 style="margin-bottom: 8px;">FIFA spent the money on the trophy, not the API</h3>
-                    <p style="opacity: 0.75;">It looks like their World Cup data service is down right now.</p>
+                <div style="max-width: 400px; margin: 0 auto;">
+                    <div style="font-size: 2.5em; margin-bottom: 10px;">${joke.emoji}</div>
+                    <h3 style="margin-bottom: 8px;">${joke.headline}</h3>
+                    <p style="opacity: 0.75;">${joke.sub}</p>
                     <p style="font-size: 12px; opacity: 0.6; margin-top: 10px;">${statusNote}</p>
                     <button class="btn" style="margin-top: 16px;" onclick="refreshData()">🔄 Try again</button>
                     ${localHint}
