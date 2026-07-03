@@ -89,6 +89,31 @@
             justify-content: center;
             font-size: 3em;
             filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
+            overflow: hidden;
+        }
+
+        /* Empty "?" placeholder in the centre until the champion is decided. */
+        .center-trophy.pending {
+            border: 2px dashed rgba(255, 215, 0, 0.5);
+        }
+
+        .center-trophy .champion-q {
+            font-size: 0.6em;
+            font-weight: bold;
+            opacity: 0.7;
+        }
+
+        /* Champion decided: show their flag filling the centre circle. */
+        .center-trophy img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
+            border: 3px solid #FFD700;
+        }
+
+        .center-trophy.decided {
+            box-shadow: 0 0 25px rgba(255, 215, 0, 0.8);
         }
 
         .team-flag {
@@ -531,7 +556,7 @@
 
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.3</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.4</div>
     </div>
 
     <div class="timezone-selector">
@@ -590,7 +615,7 @@
 
     <div id="wheelContainer" style="display: none;">
         <svg id="bracketSvg"></svg>
-        <div class="center-trophy">🏆</div>
+        <div class="center-trophy pending" id="centerChampion"><span class="champion-q">?</span></div>
         <div id="teamFlags"></div>
         <div id="matchTimes"></div>
     </div>
@@ -1520,6 +1545,37 @@
 
             // Update the Canada timer
             updateCanadaTimer();
+
+            // Fill the centre with the champion (winner of the final), or an empty
+            // "?" circle while the winner is still to be decided.
+            updateChampion();
+        }
+
+        function updateChampion() {
+            const el = document.getElementById('centerChampion');
+            if (!el) return;
+
+            const finalMatch = allMatches.find(m => m.type === 'final');
+            let champion = null;
+            if (finalMatch && finalMatch.finished === 'TRUE') {
+                const homeWon = parseInt(finalMatch.home_score) > parseInt(finalMatch.away_score);
+                const winnerId = homeWon ? finalMatch.home_team_id : finalMatch.away_team_id;
+                champion = allTeams.find(t => t.id === winnerId) || null;
+            }
+
+            if (champion) {
+                el.classList.add('decided');
+                el.classList.remove('pending');
+                el.title = `${champion.name_en} — Champion 🏆`;
+                const code = champion.fifa_code || (champion.name_en || '').substring(0, 3).toUpperCase();
+                const src = champion.flag || `https://flagcdn.com/w80/${(champion.iso2 || '').toLowerCase()}.png`;
+                el.innerHTML = `<img src="${src}" alt="${champion.name_en}" onerror="this.parentNode.innerHTML='${code}'">`;
+            } else {
+                el.classList.add('pending');
+                el.classList.remove('decided');
+                el.title = 'Champion — to be decided';
+                el.innerHTML = '<span class="champion-q">?</span>';
+            }
         }
 
         function resolveLabelOverlaps(container, iterations = 20) {
