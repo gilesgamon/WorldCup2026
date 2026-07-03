@@ -466,14 +466,24 @@
         .canada-timer .match-row {
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: flex-start;
             gap: 8px;
         }
 
-        .canada-timer .match-time {
+        /* Right-hand column: date on top, kickoff time directly beneath it. Uses a
+           dedicated class name so it doesn't inherit the wheel's global (absolutely
+           positioned) .match-time styles, which made the time float. */
+        .canada-timer .match-meta {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 3px;
+            white-space: nowrap;
+        }
+
+        .canada-timer .match-kickoff {
             font-size: 11px;
             opacity: 0.7;
-            text-align: left;
         }
 
         .canada-timer .timer-match:first-of-type {
@@ -516,7 +526,7 @@
             color: #FFD700;
         }
 
-        .canada-timer .timer-match.live .match-time {
+        .canada-timer .timer-match.live .match-kickoff {
             color: #4ade80;
             opacity: 1;
             font-weight: 600;
@@ -556,7 +566,7 @@
 
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.4</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.5</div>
     </div>
 
     <div class="timezone-selector">
@@ -1244,9 +1254,11 @@
                         <div class="timer-match live">
                             <div class="match-row">
                                 <div class="match-teams">${scoreLine}</div>
-                                <div class="match-when live">🔴 LIVE</div>
+                                <div class="match-meta">
+                                    <span class="match-when live">🔴 LIVE</span>
+                                    <span class="match-kickoff">${elapsed}</span>
+                                </div>
                             </div>
-                            <div class="match-time">${elapsed}</div>
                         </div>
                     `;
                     return;
@@ -1290,9 +1302,11 @@
                     <div class="timer-match">
                         <div class="match-row">
                             <div class="match-teams">${teams}</div>
-                            <div class="match-when ${whenClass}">${whenLabel}</div>
+                            <div class="match-meta">
+                                <span class="match-when ${whenClass}">${whenLabel}</span>
+                                <span class="match-kickoff">${matchTimeStr}</span>
+                            </div>
                         </div>
-                        <div class="match-time">${matchTimeStr}</div>
                     </div>
                 `;
             });
