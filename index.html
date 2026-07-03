@@ -147,11 +147,22 @@
             text-overflow: ellipsis;
         }
 
+        .match-time .date {
+            font-size: inherit;
+            line-height: 1.1;
+        }
+
+        .match-time .time {
+            font-size: inherit;
+            font-weight: 600;
+            line-height: 1.1;
+        }
+
         @media (max-width: 768px) {
             .match-time {
                 font-size: 9px;
-                padding: 3px 6px;
-                max-width: 120px;
+                padding: 2px 5px;
+                max-width: 80px;
             }
         }
 
@@ -271,7 +282,7 @@
 <body>
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.7</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.8</div>
     </div>
 
     <div class="timezone-selector">
@@ -437,6 +448,32 @@
             } catch (e) {
                 console.error('Error formatting time:', e);
                 return dateString;
+            }
+        }
+
+        function formatMatchTimeParts(dateString) {
+            // Return the date and time as separate, compact strings so the label
+            // can be stacked on two short lines (much narrower than one long line,
+            // which greatly reduces overlap on small screens).
+            try {
+                const date = parseMatchDate(dateString);
+                const timezone = getUserTimezone();
+
+                const dateStr = date.toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    timeZone: timezone
+                });
+                const timeStr = date.toLocaleString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    timeZone: timezone
+                });
+
+                return { dateStr, timeStr };
+            } catch (e) {
+                console.error('Error formatting time:', e);
+                return { dateStr: dateString, timeStr: '' };
             }
         }
 
@@ -639,8 +676,12 @@
                                 <div class="score">${team1Code} ${match.home_score} - ${match.away_score} ${team2Code}</div>
                             `;
                         } else {
-                            // Upcoming match - show date/time
-                            timeDiv.textContent = formatMatchTime(match.local_date);
+                            // Upcoming match - show date/time on two compact lines
+                            const parts = formatMatchTimeParts(match.local_date);
+                            timeDiv.innerHTML = `
+                                <div class="date">${parts.dateStr}</div>
+                                <div class="time">${parts.timeStr}</div>
+                            `;
                         }
                         
                         // Prevent overlapping labels on small screens.
@@ -664,6 +705,65 @@
                     }
                 });
             });
+
+            // Final pass: guarantee no two labels overlap by nudging them apart
+            // vertically. The radial offset above is only a starting hint; this
+            // measures the real rendered boxes and resolves any remaining
+            // collisions (important on phones where the wheel is small).
+            resolveLabelOverlaps(timesContainer);
+        }
+
+        function resolveLabelOverlaps(container, iterations = 20) {
+            // Labels use transform: translate(-50%, -50%), so style.left/top is the
+            // centre of each box. We read the rendered width/height, detect pairs
+            // that overlap on both axes, and push them apart along the vertical
+            // axis (adding an offset to the heights) until they no longer collide.
+            const items = Array.from(container.children).map(el => ({
+                el,
+                x: parseFloat(el.style.left) || 0,
+                y: parseFloat(el.style.top) || 0,
+                w: el.offsetWidth || 40,
+                h: el.offsetHeight || 18
+            }));
+
+            if (items.length < 2) return;
+
+            const padY = 2; // minimum vertical gap between labels
+
+            for (let iter = 0; iter < iterations; iter++) {
+                let moved = false;
+
+                for (let i = 0; i < items.length; i++) {
+                    for (let j = i + 1; j < items.length; j++) {
+                        const a = items[i];
+                        const b = items[j];
+
+                        const minDx = (a.w + b.w) / 2;
+                        const minDy = (a.h + b.h) / 2 + padY;
+
+                        const dx = Math.abs(a.x - b.x);
+                        const dy = Math.abs(a.y - b.y);
+
+                        // Only a real collision if the boxes overlap on both axes.
+                        if (dx < minDx && dy < minDy) {
+                            const push = (minDy - dy) / 2 + 0.5;
+
+                            if (a.y <= b.y) {
+                                a.y -= push;
+                                b.y += push;
+                            } else {
+                                a.y += push;
+                                b.y -= push;
+                            }
+                            moved = true;
+                        }
+                    }
+                }
+
+                if (!moved) break;
+            }
+
+            items.forEach(it => { it.el.style.top = it.y + 'px'; });
         }
 
         function drawLine(svg, x1, y1, x2, y2, active) {
