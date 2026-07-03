@@ -411,9 +411,16 @@
         .canada-timer .timer-header {
             font-size: 13px;
             font-weight: 600;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
             opacity: 0.9;
             text-align: center;
+        }
+
+        .canada-timer .timer-subtitle {
+            font-size: 10px;
+            opacity: 0.6;
+            text-align: center;
+            margin-bottom: 8px;
         }
 
         .canada-timer .timer-match {
@@ -421,9 +428,21 @@
             padding: 6px 0;
             border-top: 1px solid rgba(255, 255, 255, 0.1);
             display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .canada-timer .match-row {
+            display: flex;
             justify-content: space-between;
             align-items: center;
             gap: 8px;
+        }
+
+        .canada-timer .match-time {
+            font-size: 11px;
+            opacity: 0.7;
+            text-align: left;
         }
 
         .canada-timer .timer-match:first-of-type {
@@ -482,6 +501,7 @@
 <body>
     <div class="canada-timer" id="canadaTimer">
         <div class="timer-header">🍁 Canada Matches</div>
+        <div class="timer-subtitle">Jodi timer</div>
         <div id="canadaMatches"></div>
     </div>
 
@@ -1064,20 +1084,34 @@
                 return;
             }
 
-            // Get today and tomorrow boundaries in user's timezone
-            const now = new Date();
+            // Get current time in user's timezone
             const userTz = getUserTimezone();
+            const now = new Date();
             
-            // Get start of today in user's timezone
-            const todayStart = new Date(now.toLocaleString('en-US', { timeZone: userTz }));
-            todayStart.setHours(0, 0, 0, 0);
+            // Create dates in user's timezone using Intl API
+            const formatter = new Intl.DateTimeFormat('en-US', {
+                timeZone: userTz,
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+            });
             
-            // Get start of tomorrow
-            const tomorrowStart = new Date(todayStart);
+            const parts = formatter.formatToParts(now);
+            const year = parseInt(parts.find(p => p.type === 'year').value);
+            const month = parseInt(parts.find(p => p.type === 'month').value);
+            const day = parseInt(parts.find(p => p.type === 'day').value);
+            
+            // Create start of today at midnight in user's timezone
+            const todayStart = new Date(Date.UTC(year, month - 1, day));
+            const todayStartLocal = new Date(todayStart.toLocaleString('en-US', { timeZone: userTz }));
+            todayStartLocal.setHours(0, 0, 0, 0);
+            
+            // Create start of tomorrow
+            const tomorrowStart = new Date(todayStartLocal);
             tomorrowStart.setDate(tomorrowStart.getDate() + 1);
             
-            // Get start of day after tomorrow
-            const dayAfterStart = new Date(todayStart);
+            // Create start of day after tomorrow
+            const dayAfterStart = new Date(todayStartLocal);
             dayAfterStart.setDate(dayAfterStart.getDate() + 2);
 
             let html = '';
@@ -1092,19 +1126,25 @@
                 
                 const teams = `${team1Name} vs ${team2Name}`;
                 
-                // Determine if match is today or tomorrow
-                const matchTime = match.parsedDate.getTime();
-                const todayTime = todayStart.getTime();
-                const tomorrowTime = tomorrowStart.getTime();
-                const dayAfterTime = dayAfterStart.getTime();
+                // Format the match time in user's timezone
+                const matchTimeStr = match.parsedDate.toLocaleString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    timeZone: userTz
+                });
+                
+                // Get the match date in user's timezone for comparison
+                const matchInUserTz = new Date(match.parsedDate.toLocaleString('en-US', { timeZone: userTz }));
+                matchInUserTz.setHours(0, 0, 0, 0);
                 
                 let whenLabel = '';
                 let whenClass = '';
                 
-                if (matchTime >= todayTime && matchTime < tomorrowTime) {
+                // Compare dates at midnight
+                if (matchInUserTz.getTime() === todayStartLocal.getTime()) {
                     whenLabel = 'Today';
                     whenClass = 'today';
-                } else if (matchTime >= tomorrowTime && matchTime < dayAfterTime) {
+                } else if (matchInUserTz.getTime() === tomorrowStart.getTime()) {
                     whenLabel = 'Tomorrow';
                     whenClass = 'tomorrow';
                 } else {
@@ -1120,8 +1160,11 @@
                 
                 html += `
                     <div class="timer-match">
-                        <div class="match-teams">${teams}</div>
-                        <div class="match-when ${whenClass}">${whenLabel}</div>
+                        <div class="match-row">
+                            <div class="match-teams">${teams}</div>
+                            <div class="match-when ${whenClass}">${whenLabel}</div>
+                        </div>
+                        <div class="match-time">${matchTimeStr}</div>
                     </div>
                 `;
             });
