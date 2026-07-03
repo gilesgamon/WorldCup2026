@@ -271,7 +271,7 @@
 <body>
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.6</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.7</div>
     </div>
 
     <div class="timezone-selector">
@@ -643,12 +643,23 @@
                             timeDiv.textContent = formatMatchTime(match.local_date);
                         }
                         
-                        // Add offset to prevent overlapping on mobile
-                        // Alternate above and below the match point, with increasing offset
-                        const verticalOffset = (matchIdx % 2 === 0 ? 1 : -1) * (25 + (matchIdx % 4) * 5);
-                        
-                        timeDiv.style.left = mx + 'px';
-                        timeDiv.style.top = (my + verticalOffset) + 'px';
+                        // Prevent overlapping labels on small screens.
+                        // Neighbouring matches sit next to each other along the ring's
+                        // tangent, so their labels are separated along the radial
+                        // (perpendicular) direction instead of a fixed vertical offset.
+                        // Alternating inward/outward across a couple of distances creates
+                        // several concentric bands, so adjacent labels never sit at the
+                        // same position regardless of where they are on the wheel.
+                        const radialBands = [18, 38];
+                        const radialMagnitude = radialBands[Math.floor(matchIdx / 2) % radialBands.length];
+                        const radialDirection = (matchIdx % 2 === 0) ? -1 : 1; // inward vs outward
+                        const radialOffset = radialMagnitude * radialDirection;
+
+                        const labelX = mx + Math.cos(angleRad) * radialOffset;
+                        const labelY = my + Math.sin(angleRad) * radialOffset;
+
+                        timeDiv.style.left = labelX + 'px';
+                        timeDiv.style.top = labelY + 'px';
                         timesContainer.appendChild(timeDiv);
                     }
                 });
