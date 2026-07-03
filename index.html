@@ -566,7 +566,7 @@
 
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.5</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.6</div>
     </div>
 
     <div class="timezone-selector">
@@ -1199,35 +1199,20 @@
                 return;
             }
 
-            // Get current time in user's timezone
             const userTz = getUserTimezone();
-            const now = new Date();
-            
-            // Create dates in user's timezone using Intl API
-            const formatter = new Intl.DateTimeFormat('en-US', {
-                timeZone: userTz,
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit'
-            });
-            
-            const parts = formatter.formatToParts(now);
-            const year = parseInt(parts.find(p => p.type === 'year').value);
-            const month = parseInt(parts.find(p => p.type === 'month').value);
-            const day = parseInt(parts.find(p => p.type === 'day').value);
-            
-            // Create start of today at midnight in user's timezone
-            const todayStart = new Date(Date.UTC(year, month - 1, day));
-            const todayStartLocal = new Date(todayStart.toLocaleString('en-US', { timeZone: userTz }));
-            todayStartLocal.setHours(0, 0, 0, 0);
-            
-            // Create start of tomorrow
-            const tomorrowStart = new Date(todayStartLocal);
-            tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-            
-            // Create start of day after tomorrow
-            const dayAfterStart = new Date(todayStartLocal);
-            dayAfterStart.setDate(dayAfterStart.getDate() + 2);
+
+            // Return the calendar date (as a UTC-midnight timestamp) that a given
+            // instant falls on *in the user's timezone*. Comparing these gives a
+            // reliable whole-day difference, so Today/Tomorrow labels are correct
+            // regardless of timezone offsets.
+            const dayNumberInTz = (date, tz) => {
+                const p = new Intl.DateTimeFormat('en-CA', {
+                    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit'
+                }).formatToParts(date);
+                const get = t => Number(p.find(x => x.type === t).value);
+                return Date.UTC(get('year'), get('month') - 1, get('day'));
+            };
+            const todayNum = dayNumberInTz(new Date(), userTz);
 
             let html = '';
             
@@ -1273,28 +1258,28 @@
                     timeZone: userTz
                 });
                 
-                // Get the match date in user's timezone for comparison
-                const matchInUserTz = new Date(match.parsedDate.toLocaleString('en-US', { timeZone: userTz }));
-                matchInUserTz.setHours(0, 0, 0, 0);
-                
+                // Whole-day difference between the match date and today, both taken
+                // in the user's timezone.
+                const dayDiff = Math.round(
+                    (dayNumberInTz(match.parsedDate, userTz) - todayNum) / 86400000
+                );
+
                 let whenLabel = '';
                 let whenClass = '';
-                
-                // Compare dates at midnight
-                if (matchInUserTz.getTime() === todayStartLocal.getTime()) {
+
+                if (dayDiff === 0) {
                     whenLabel = 'Today';
                     whenClass = 'today';
-                } else if (matchInUserTz.getTime() === tomorrowStart.getTime()) {
+                } else if (dayDiff === 1) {
                     whenLabel = 'Tomorrow';
                     whenClass = 'tomorrow';
                 } else {
-                    // For matches beyond tomorrow, show the date
-                    const dateStr = match.parsedDate.toLocaleDateString('en-US', {
+                    // For matches beyond tomorrow (or in the past), show the date.
+                    whenLabel = match.parsedDate.toLocaleDateString('en-US', {
                         month: 'short',
                         day: 'numeric',
                         timeZone: userTz
                     });
-                    whenLabel = dateStr;
                     whenClass = '';
                 }
                 
