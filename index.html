@@ -282,7 +282,7 @@
 <body>
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.9</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.10</div>
     </div>
 
     <div class="timezone-selector">
@@ -415,8 +415,22 @@
                     fetch(`${API_BASE}/get/teams`)
                 ]);
 
-                const matchesData = await matchesRes.json();
-                const teamsData = await teamsRes.json();
+                // The API sometimes returns an error page (e.g. 502 Bad Gateway)
+                // instead of JSON. Detect that here so we can show a useful message
+                // rather than a generic parse failure.
+                if (!matchesRes.ok || !teamsRes.ok) {
+                    const status = !matchesRes.ok ? matchesRes.status : teamsRes.status;
+                    throw new ApiError(status);
+                }
+
+                let matchesData, teamsData;
+                try {
+                    matchesData = await matchesRes.json();
+                    teamsData = await teamsRes.json();
+                } catch (parseErr) {
+                    // 2xx but body wasn't valid JSON — treat as the API misbehaving.
+                    throw new ApiError(matchesRes.status || 0);
+                }
 
                 allMatches = matchesData.games || matchesData;
                 allTeams = teamsData.teams || teamsData;
@@ -429,8 +443,44 @@
                 renderWheel();
             } catch (error) {
                 console.error('Error:', error);
-                document.getElementById('loading').innerHTML = '<h3>⚠️ Connection Error</h3><p>Serve via HTTP: python3 -m http.server 8000</p>';
+                showErrorMessage(error);
             }
+        }
+
+        // Custom error so we can tell "the API responded badly" apart from a
+        // low-level network failure (offline, blocked, opened via file://, etc.).
+        class ApiError extends Error {
+            constructor(status) {
+                super(`API responded with status ${status}`);
+                this.name = 'ApiError';
+                this.status = status;
+            }
+        }
+
+        function showErrorMessage(error) {
+            const loading = document.getElementById('loading');
+            const isApiError = error instanceof ApiError;
+            const statusNote = (isApiError && error.status)
+                ? `The live data feed returned HTTP ${error.status}.`
+                : 'Couldn\'t reach the live data feed.';
+
+            // If it's a genuine network error (not an API status error) it *might*
+            // be that the page was opened directly from disk, so keep that hint —
+            // but only as a small secondary note.
+            const localHint = !isApiError
+                ? '<p style="font-size: 12px; opacity: 0.5; margin-top: 12px;">Running locally? Serve over HTTP: <code>python3 -m http.server 8000</code></p>'
+                : '';
+
+            loading.innerHTML = `
+                <div style="max-width: 380px; margin: 0 auto;">
+                    <div style="font-size: 2.5em; margin-bottom: 10px;">🏆💸</div>
+                    <h3 style="margin-bottom: 8px;">FIFA spent the money on the trophy, not the API</h3>
+                    <p style="opacity: 0.75;">It looks like their World Cup data service is down right now.</p>
+                    <p style="font-size: 12px; opacity: 0.6; margin-top: 10px;">${statusNote}</p>
+                    <button class="btn" style="margin-top: 16px;" onclick="refreshData()">🔄 Try again</button>
+                    ${localHint}
+                </div>
+            `;
         }
 
         function getTimeZoneOffsetMs(utcDate, timeZone) {
@@ -872,7 +922,10 @@
         }
 
         function refreshData() {
-            document.getElementById('loading').style.display = 'block';
+            const loading = document.getElementById('loading');
+            // Restore the spinner in case an error card is currently shown.
+            loading.innerHTML = '<div class="spinner"></div><div>Loading tournament data...</div>';
+            loading.style.display = 'block';
             document.getElementById('wheelContainer').style.display = 'none';
             fetchData();
         }
