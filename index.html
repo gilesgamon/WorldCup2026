@@ -89,6 +89,31 @@
             justify-content: center;
             font-size: 3em;
             filter: drop-shadow(0 0 20px rgba(255, 215, 0, 0.6));
+            overflow: hidden;
+        }
+
+        /* Empty "?" placeholder in the centre until the champion is decided. */
+        .center-trophy.pending {
+            border: 2px dashed rgba(255, 215, 0, 0.5);
+        }
+
+        .center-trophy .champion-q {
+            font-size: 0.6em;
+            font-weight: bold;
+            opacity: 0.7;
+        }
+
+        /* Champion decided: show their flag filling the centre circle. */
+        .center-trophy img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
+            border: 3px solid #FFD700;
+        }
+
+        .center-trophy.decided {
+            box-shadow: 0 0 25px rgba(255, 215, 0, 0.8);
         }
 
         .team-flag {
@@ -128,6 +153,12 @@
         .team-flag.eliminated {
             opacity: 0.3;
             filter: grayscale(100%);
+        }
+
+        .team-flag.tbd {
+            background: rgba(255, 255, 255, 0.05);
+            border-style: dashed;
+            border-color: rgba(255, 255, 255, 0.25);
         }
 
         .match-time {
@@ -473,6 +504,24 @@
             background: rgba(96, 165, 250, 0.15);
         }
 
+        .canada-timer .match-when.live {
+            color: #f87171;
+            background: rgba(248, 113, 113, 0.18);
+            animation: pulse-border 2s infinite;
+        }
+
+        .canada-timer .timer-match.live .match-teams {
+            opacity: 1;
+            font-weight: 700;
+            color: #FFD700;
+        }
+
+        .canada-timer .timer-match.live .match-time {
+            color: #4ade80;
+            opacity: 1;
+            font-weight: 600;
+        }
+
         .canada-timer .no-matches {
             font-size: 11px;
             opacity: 0.6;
@@ -507,7 +556,7 @@
 
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.1</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.4</div>
     </div>
 
     <div class="timezone-selector">
@@ -566,7 +615,7 @@
 
     <div id="wheelContainer" style="display: none;">
         <svg id="bracketSvg"></svg>
-        <div class="center-trophy">🏆</div>
+        <div class="center-trophy pending" id="centerChampion"><span class="champion-q">?</span></div>
         <div id="teamFlags"></div>
         <div id="matchTimes"></div>
     </div>
@@ -1054,17 +1103,73 @@
             }
         }
 
+        // Build the knockout bracket order deterministically from the API's
+        // "Winner Match N" feeder labels (e.g. r16 match 90 is fed by "Winner
+        // Match 73" and "Winner Match 75"). A depth-first walk from the final down
+        // to the R32 leaves yields, for each ring, the matches in correct
+        // left-to-right bracket order — independent of which results are in.
+        // Returns { r32, r16, qf, sf } arrays, or null if the structure can't be
+        // resolved (in which case the caller falls back to the heuristic).
+        function orderKnockoutByBracket(matches) {
+            const byId = {};
+            matches.forEach(m => { byId[String(m.id)] = m; });
+
+            const feederIds = (m) => {
+                const re = /Match\s+(\d+)/i;
+                const h = (m.home_team_label || '').match(re);
+                const a = (m.away_team_label || '').match(re);
+                return [h ? h[1] : null, a ? a[1] : null];
+            };
+
+            const rounds = { r32: [], r16: [], qf: [], sf: [] };
+            let ok = true;
+
+            const visit = (id, depth) => {
+                if (depth > 8) { ok = false; return; } // guard against bad/cyclic data
+                const m = byId[String(id)];
+                if (!m) { ok = false; return; }
+                if (m.type === 'r32') { rounds.r32.push(m); return; }
+                const [h, a] = feederIds(m);
+                if (!h || !a) { ok = false; return; }
+                visit(h, depth + 1);
+                visit(a, depth + 1);
+                if (rounds[m.type]) rounds[m.type].push(m);
+            };
+
+            const finalMatch = matches.find(m => m.type === 'final');
+            if (!finalMatch) return null;
+            visit(finalMatch.id, 0);
+
+            if (!ok) return null;
+
+            // Only trust the deterministic order if every ring is fully populated to
+            // match the fixed position slots; otherwise defer to the fallback.
+            const expected = { r32: 16, r16: 8, qf: 4, sf: 2 };
+            for (const round of Object.keys(expected)) {
+                if (rounds[round].length !== expected[round]) return null;
+            }
+            return rounds;
+        }
+
         function updateCanadaTimer() {
             const container = document.getElementById('canadaMatches');
             if (!container) return;
 
-            // Canadian stadium IDs: Toronto (12) and Vancouver (13)
-            const canadianStadiumIds = ['12', '13'];
-            
-            // Get Canadian matches that haven't finished
-            const canadaMatches = allMatches
-                .filter(m => 
-                    canadianStadiumIds.includes(String(m.stadium_id)) &&
+            // Identify the Canada national team by FIFA code (fall back to name),
+            // rather than relying on a hard-coded team id.
+            const canadaTeam = allTeams.find(t =>
+                (t.fifa_code && t.fifa_code.toUpperCase() === 'CAN') ||
+                (t.name_en && t.name_en.toLowerCase() === 'canada')
+            );
+            const canadaId = canadaTeam ? String(canadaTeam.id) : null;
+
+            // Upcoming matches that FEATURE Canada — not matches merely played at a
+            // Canadian venue. (The old logic filtered by stadium, so e.g. a Vancouver
+            // game like "SUI vs TBD" showed up while Canada's actual next game,
+            // played in Houston, was hidden.)
+            const canadaMatches = (canadaId ? allMatches : [])
+                .filter(m =>
+                    (String(m.home_team_id) === canadaId || String(m.away_team_id) === canadaId) &&
                     m.finished !== 'TRUE' &&
                     m.time_elapsed !== 'finished'
                 )
@@ -1124,6 +1229,29 @@
                 const team1Name = team1 ? (team1.fifa_code || team1.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
                 const team2Name = team2 ? (team2.fifa_code || team2.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
                 
+                // If Canada's match is in progress, show the live score instead of
+                // the kickoff time. A match is live when it has started but isn't
+                // finished (time_elapsed is neither 'notstarted' nor 'finished').
+                const isLive = match.time_elapsed !== 'notstarted' &&
+                               match.time_elapsed !== 'finished' &&
+                               match.finished !== 'TRUE';
+
+                if (isLive) {
+                    const scoreLine = `${team1Name} ${match.home_score} - ${match.away_score} ${team2Name}`;
+                    const elapsedRaw = String(match.time_elapsed);
+                    const elapsed = /^\d+$/.test(elapsedRaw) ? `${elapsedRaw}'` : elapsedRaw;
+                    html += `
+                        <div class="timer-match live">
+                            <div class="match-row">
+                                <div class="match-teams">${scoreLine}</div>
+                                <div class="match-when live">🔴 LIVE</div>
+                            </div>
+                            <div class="match-time">${elapsed}</div>
+                        </div>
+                    `;
+                    return;
+                }
+
                 const teams = `${team1Name} vs ${team2Name}`;
                 
                 // Format the match time in user's timezone
@@ -1196,9 +1324,16 @@
 
             const teamOffset = size * 0.05; // How far teams are from match points
 
-            // Draw each knockout round
-            // First pass: reorder all rounds based on their destination matches
-            const reorderedByRound = {};
+            // Draw each knockout round.
+            // Preferred: derive the bracket order deterministically from the API's
+            // explicit "Winner Match N" feeder labels, so every match always sits
+            // in its correct, stable bracket slot regardless of which results are in.
+            // Fallback: the older results-based heuristic (used only if the labels
+            // are missing/unparseable).
+            let reorderedByRound = orderKnockoutByBracket(allMatches);
+
+            if (!reorderedByRound) {
+            reorderedByRound = {};
             
             ['r32', 'r16', 'qf', 'sf'].forEach((roundType, roundIdx) => {
                 let matches = allMatches
@@ -1270,6 +1405,7 @@
                 
                 reorderedByRound[roundType] = matches;
             });
+            }
             
             // Second pass: render using the reordered matches
             ['r32', 'r16', 'qf', 'sf'].forEach((roundType, roundIdx) => {
@@ -1336,8 +1472,18 @@
                     const team1 = allTeams.find(t => t.id === match.home_team_id);
                     const team2 = allTeams.find(t => t.id === match.away_team_id);
 
-                    if (team1) createFlag(flagsContainer, team1, t1x, t1y, match, 'home');
-                    if (team2) createFlag(flagsContainer, team2, t2x, t2y, match, 'away');
+                    if (team1) {
+                        createFlag(flagsContainer, team1, t1x, t1y, match, 'home');
+                    } else {
+                        // Team not decided yet: show a placeholder with its feeder
+                        // label (e.g. "Winner Match 87") so the slot is identifiable.
+                        createTBDFlag(flagsContainer, match.home_team_label, t1x, t1y);
+                    }
+                    if (team2) {
+                        createFlag(flagsContainer, team2, t2x, t2y, match, 'away');
+                    } else {
+                        createTBDFlag(flagsContainer, match.away_team_label, t2x, t2y);
+                    }
 
                     // Show match time if not yet finished
                     if (match.finished === 'FALSE' && match.time_elapsed !== 'finished') {
@@ -1399,6 +1545,37 @@
 
             // Update the Canada timer
             updateCanadaTimer();
+
+            // Fill the centre with the champion (winner of the final), or an empty
+            // "?" circle while the winner is still to be decided.
+            updateChampion();
+        }
+
+        function updateChampion() {
+            const el = document.getElementById('centerChampion');
+            if (!el) return;
+
+            const finalMatch = allMatches.find(m => m.type === 'final');
+            let champion = null;
+            if (finalMatch && finalMatch.finished === 'TRUE') {
+                const homeWon = parseInt(finalMatch.home_score) > parseInt(finalMatch.away_score);
+                const winnerId = homeWon ? finalMatch.home_team_id : finalMatch.away_team_id;
+                champion = allTeams.find(t => t.id === winnerId) || null;
+            }
+
+            if (champion) {
+                el.classList.add('decided');
+                el.classList.remove('pending');
+                el.title = `${champion.name_en} — Champion 🏆`;
+                const code = champion.fifa_code || (champion.name_en || '').substring(0, 3).toUpperCase();
+                const src = champion.flag || `https://flagcdn.com/w80/${(champion.iso2 || '').toLowerCase()}.png`;
+                el.innerHTML = `<img src="${src}" alt="${champion.name_en}" onerror="this.parentNode.innerHTML='${code}'">`;
+            } else {
+                el.classList.add('pending');
+                el.classList.remove('decided');
+                el.title = 'Champion — to be decided';
+                el.innerHTML = '<span class="champion-q">?</span>';
+            }
         }
 
         function resolveLabelOverlaps(container, iterations = 20) {
@@ -1463,6 +1640,28 @@
             line.classList.add('bracket-line');
             if (active) line.classList.add('active');
             svg.appendChild(line);
+        }
+
+        function createTBDFlag(container, label, x, y) {
+            const flag = document.createElement('div');
+            flag.className = 'team-flag tbd';
+            flag.style.left = x + 'px';
+            flag.style.top = y + 'px';
+            flag.innerHTML = '<div style="font-size: 10px; font-weight: bold; opacity: 0.7;">?</div>';
+
+            const text = label && label.trim() ? label : 'To be decided';
+            flag.addEventListener('mouseenter', (e) => {
+                const tooltip = document.getElementById('tooltip');
+                tooltip.textContent = text;
+                tooltip.style.display = 'block';
+                tooltip.style.left = e.pageX + 15 + 'px';
+                tooltip.style.top = e.pageY - 10 + 'px';
+            });
+            flag.addEventListener('mouseleave', () => {
+                document.getElementById('tooltip').style.display = 'none';
+            });
+
+            container.appendChild(flag);
         }
 
         function createFlag(container, team, x, y, match, side) {
