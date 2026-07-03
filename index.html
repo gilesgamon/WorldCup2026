@@ -130,6 +130,12 @@
             filter: grayscale(100%);
         }
 
+        .team-flag.tbd {
+            background: rgba(255, 255, 255, 0.05);
+            border-style: dashed;
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+
         .match-time {
             position: absolute;
             font-size: 11px;
@@ -400,7 +406,7 @@
 <body>
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.0</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.1</div>
     </div>
 
     <div class="timezone-selector">
@@ -947,6 +953,54 @@
             }
         }
 
+        // Build the knockout bracket order deterministically from the API's
+        // "Winner Match N" feeder labels (e.g. r16 match 90 is fed by "Winner
+        // Match 73" and "Winner Match 75"). A depth-first walk from the final down
+        // to the R32 leaves yields, for each ring, the matches in correct
+        // left-to-right bracket order — independent of which results are in.
+        // Returns { r32, r16, qf, sf } arrays, or null if the structure can't be
+        // resolved (in which case the caller falls back to the heuristic).
+        function orderKnockoutByBracket(matches) {
+            const byId = {};
+            matches.forEach(m => { byId[String(m.id)] = m; });
+
+            const feederIds = (m) => {
+                const re = /Match\s+(\d+)/i;
+                const h = (m.home_team_label || '').match(re);
+                const a = (m.away_team_label || '').match(re);
+                return [h ? h[1] : null, a ? a[1] : null];
+            };
+
+            const rounds = { r32: [], r16: [], qf: [], sf: [] };
+            let ok = true;
+
+            const visit = (id, depth) => {
+                if (depth > 8) { ok = false; return; } // guard against bad/cyclic data
+                const m = byId[String(id)];
+                if (!m) { ok = false; return; }
+                if (m.type === 'r32') { rounds.r32.push(m); return; }
+                const [h, a] = feederIds(m);
+                if (!h || !a) { ok = false; return; }
+                visit(h, depth + 1);
+                visit(a, depth + 1);
+                if (rounds[m.type]) rounds[m.type].push(m);
+            };
+
+            const finalMatch = matches.find(m => m.type === 'final');
+            if (!finalMatch) return null;
+            visit(finalMatch.id, 0);
+
+            if (!ok) return null;
+
+            // Only trust the deterministic order if every ring is fully populated to
+            // match the fixed position slots; otherwise defer to the fallback.
+            const expected = { r32: 16, r16: 8, qf: 4, sf: 2 };
+            for (const round of Object.keys(expected)) {
+                if (rounds[round].length !== expected[round]) return null;
+            }
+            return rounds;
+        }
+
         function renderWheel() {
             const container = document.getElementById('wheelContainer');
             const size = container.clientWidth;
@@ -971,9 +1025,16 @@
 
             const teamOffset = size * 0.05; // How far teams are from match points
 
-            // Draw each knockout round
-            // First pass: reorder all rounds based on their destination matches
-            const reorderedByRound = {};
+            // Draw each knockout round.
+            // Preferred: derive the bracket order deterministically from the API's
+            // explicit "Winner Match N" feeder labels, so every match always sits
+            // in its correct, stable bracket slot regardless of which results are in.
+            // Fallback: the older results-based heuristic (used only if the labels
+            // are missing/unparseable).
+            let reorderedByRound = orderKnockoutByBracket(allMatches);
+
+            if (!reorderedByRound) {
+            reorderedByRound = {};
             
             ['r32', 'r16', 'qf', 'sf'].forEach((roundType, roundIdx) => {
                 let matches = allMatches
@@ -1045,6 +1106,7 @@
                 
                 reorderedByRound[roundType] = matches;
             });
+            }
             
             // Second pass: render using the reordered matches
             ['r32', 'r16', 'qf', 'sf'].forEach((roundType, roundIdx) => {
@@ -1111,8 +1173,18 @@
                     const team1 = allTeams.find(t => t.id === match.home_team_id);
                     const team2 = allTeams.find(t => t.id === match.away_team_id);
 
-                    if (team1) createFlag(flagsContainer, team1, t1x, t1y, match, 'home');
-                    if (team2) createFlag(flagsContainer, team2, t2x, t2y, match, 'away');
+                    if (team1) {
+                        createFlag(flagsContainer, team1, t1x, t1y, match, 'home');
+                    } else {
+                        // Team not decided yet: show a placeholder with its feeder
+                        // label (e.g. "Winner Match 87") so the slot is identifiable.
+                        createTBDFlag(flagsContainer, match.home_team_label, t1x, t1y);
+                    }
+                    if (team2) {
+                        createFlag(flagsContainer, team2, t2x, t2y, match, 'away');
+                    } else {
+                        createTBDFlag(flagsContainer, match.away_team_label, t2x, t2y);
+                    }
 
                     // Show match time if not yet finished
                     if (match.finished === 'FALSE' && match.time_elapsed !== 'finished') {
@@ -1235,6 +1307,28 @@
             line.classList.add('bracket-line');
             if (active) line.classList.add('active');
             svg.appendChild(line);
+        }
+
+        function createTBDFlag(container, label, x, y) {
+            const flag = document.createElement('div');
+            flag.className = 'team-flag tbd';
+            flag.style.left = x + 'px';
+            flag.style.top = y + 'px';
+            flag.innerHTML = '<div style="font-size: 10px; font-weight: bold; opacity: 0.7;">?</div>';
+
+            const text = label && label.trim() ? label : 'To be decided';
+            flag.addEventListener('mouseenter', (e) => {
+                const tooltip = document.getElementById('tooltip');
+                tooltip.textContent = text;
+                tooltip.style.display = 'block';
+                tooltip.style.left = e.pageX + 15 + 'px';
+                tooltip.style.top = e.pageY - 10 + 'px';
+            });
+            flag.addEventListener('mouseleave', () => {
+                document.getElementById('tooltip').style.display = 'none';
+            });
+
+            container.appendChild(flag);
         }
 
         function createFlag(container, team, x, y, match, side) {
