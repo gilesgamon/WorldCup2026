@@ -479,6 +479,24 @@
             background: rgba(96, 165, 250, 0.15);
         }
 
+        .canada-timer .match-when.live {
+            color: #f87171;
+            background: rgba(248, 113, 113, 0.18);
+            animation: pulse-border 2s infinite;
+        }
+
+        .canada-timer .timer-match.live .match-teams {
+            opacity: 1;
+            font-weight: 700;
+            color: #FFD700;
+        }
+
+        .canada-timer .timer-match.live .match-time {
+            color: #4ade80;
+            opacity: 1;
+            font-weight: 600;
+        }
+
         .canada-timer .no-matches {
             font-size: 11px;
             opacity: 0.6;
@@ -513,7 +531,7 @@
 
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.2</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.3</div>
     </div>
 
     <div class="timezone-selector">
@@ -1186,6 +1204,29 @@
                 const team1Name = team1 ? (team1.fifa_code || team1.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
                 const team2Name = team2 ? (team2.fifa_code || team2.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
                 
+                // If Canada's match is in progress, show the live score instead of
+                // the kickoff time. A match is live when it has started but isn't
+                // finished (time_elapsed is neither 'notstarted' nor 'finished').
+                const isLive = match.time_elapsed !== 'notstarted' &&
+                               match.time_elapsed !== 'finished' &&
+                               match.finished !== 'TRUE';
+
+                if (isLive) {
+                    const scoreLine = `${team1Name} ${match.home_score} - ${match.away_score} ${team2Name}`;
+                    const elapsedRaw = String(match.time_elapsed);
+                    const elapsed = /^\d+$/.test(elapsedRaw) ? `${elapsedRaw}'` : elapsedRaw;
+                    html += `
+                        <div class="timer-match live">
+                            <div class="match-row">
+                                <div class="match-teams">${scoreLine}</div>
+                                <div class="match-when live">🔴 LIVE</div>
+                            </div>
+                            <div class="match-time">${elapsed}</div>
+                        </div>
+                    `;
+                    return;
+                }
+
                 const teams = `${team1Name} vs ${team2Name}`;
                 
                 // Format the match time in user's timezone
