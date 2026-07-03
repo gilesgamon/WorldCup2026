@@ -147,11 +147,22 @@
             text-overflow: ellipsis;
         }
 
+        .match-time .date {
+            font-size: inherit;
+            line-height: 1.1;
+        }
+
+        .match-time .time {
+            font-size: inherit;
+            font-weight: 600;
+            line-height: 1.1;
+        }
+
         @media (max-width: 768px) {
             .match-time {
                 font-size: 9px;
-                padding: 3px 6px;
-                max-width: 120px;
+                padding: 2px 5px;
+                max-width: 80px;
             }
         }
 
@@ -271,7 +282,7 @@
 <body>
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.6</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.5.11</div>
     </div>
 
     <div class="timezone-selector">
@@ -316,7 +327,7 @@
                 <option value="Africa/Johannesburg">Johannesburg (SAST)</option>
             </optgroup>
         </select>
-        <span style="font-size: 10px; opacity: 0.6; margin-left: 8px;">Times converted from US MDT</span>
+        <span style="font-size: 10px; opacity: 0.6; margin-left: 8px;">Kickoff times converted from each stadium's local time</span>
     </div>
 
     <div class="controls">
@@ -367,6 +378,36 @@
             ]
         };
 
+        // The API's `local_date` is the STADIUM's local (wall-clock) kickoff time,
+        // NOT a single fixed timezone. The 2026 World Cup spans several time zones
+        // across the US, Canada and Mexico, so each venue must be converted from its
+        // own IANA timezone. (Note: the API's "region" field — Central/Eastern/Western
+        // — is a broadcast grouping, not a timezone: e.g. Dallas and Mexico City are
+        // both "Central" but Dallas is UTC-5 in June while Mexico City is UTC-6.)
+        // Keyed by stadium_id (1-16) from the official schedule.
+        const STADIUM_TIMEZONES = {
+            '1':  'America/Mexico_City',   // Estadio Azteca - Mexico City
+            '2':  'America/Mexico_City',   // Estadio Akron - Guadalajara
+            '3':  'America/Monterrey',     // Estadio BBVA - Monterrey
+            '4':  'America/Chicago',       // AT&T Stadium - Dallas
+            '5':  'America/Chicago',       // NRG Stadium - Houston
+            '6':  'America/Chicago',       // Arrowhead Stadium - Kansas City
+            '7':  'America/New_York',      // Mercedes-Benz Stadium - Atlanta
+            '8':  'America/New_York',      // Hard Rock Stadium - Miami
+            '9':  'America/New_York',      // Gillette Stadium - Boston
+            '10': 'America/New_York',      // Lincoln Financial Field - Philadelphia
+            '11': 'America/New_York',      // MetLife Stadium - New York/New Jersey
+            '12': 'America/Toronto',       // BMO Field - Toronto
+            '13': 'America/Vancouver',     // BC Place - Vancouver
+            '14': 'America/Los_Angeles',   // Lumen Field - Seattle
+            '15': 'America/Los_Angeles',   // Levi's Stadium - San Francisco Bay Area
+            '16': 'America/Los_Angeles'    // SoFi Stadium - Los Angeles
+        };
+
+        // Fallback if a match has an unknown stadium_id. Central US time is a
+        // reasonable middle-of-the-map default across the three host countries.
+        const DEFAULT_VENUE_TIMEZONE = 'America/Chicago';
+
         async function fetchData() {
             try {
                 const [matchesRes, teamsRes] = await Promise.all([
@@ -374,8 +415,22 @@
                     fetch(`${API_BASE}/get/teams`)
                 ]);
 
-                const matchesData = await matchesRes.json();
-                const teamsData = await teamsRes.json();
+                // The API sometimes returns an error page (e.g. 502 Bad Gateway)
+                // instead of JSON. Detect that here so we can show a useful message
+                // rather than a generic parse failure.
+                if (!matchesRes.ok || !teamsRes.ok) {
+                    const status = !matchesRes.ok ? matchesRes.status : teamsRes.status;
+                    throw new ApiError(status);
+                }
+
+                let matchesData, teamsData;
+                try {
+                    matchesData = await matchesRes.json();
+                    teamsData = await teamsRes.json();
+                } catch (parseErr) {
+                    // 2xx but body wasn't valid JSON — treat as the API misbehaving.
+                    throw new ApiError(matchesRes.status || 0);
+                }
 
                 allMatches = matchesData.games || matchesData;
                 allTeams = teamsData.teams || teamsData;
@@ -388,25 +443,105 @@
                 renderWheel();
             } catch (error) {
                 console.error('Error:', error);
-                document.getElementById('loading').innerHTML = '<h3>⚠️ Connection Error</h3><p>Serve via HTTP: python3 -m http.server 8000</p>';
+                showErrorMessage(error);
             }
         }
 
-        function parseMatchDate(dateString) {
-            // Parse "06/11/2026 13:00" format
-            // API provides times in local timezone for each match (varies across US/Canada/Mexico)
-            // Most matches appear to be in Mountain Daylight Time (MDT, UTC-6)
+        // Custom error so we can tell "the API responded badly" apart from a
+        // low-level network failure (offline, blocked, opened via file://, etc.).
+        class ApiError extends Error {
+            constructor(status) {
+                super(`API responded with status ${status}`);
+                this.name = 'ApiError';
+                this.status = status;
+            }
+        }
+
+        // Rotating set of tongue-in-cheek "API is down" jokes, with a healthy
+        // hint of FIFA's, ahem, colourful financial reputation. One is picked at
+        // random each time the error screen is shown.
+        const API_DOWN_JOKES = [
+            { emoji: '🏆💸', headline: 'FIFA spent the money on the trophy, not the API', sub: 'The World Cup data service is down right now.' },
+            { emoji: '🤝💼', headline: 'The API is in a Swiss bank account and won\'t come out', sub: 'Suspiciously unavailable. Try again shortly.' },
+            { emoji: '📦💰', headline: 'The server was last seen leaving in a brown envelope', sub: 'Nobody at FIFA is answering questions right now.' },
+            { emoji: '🕵️💵', headline: 'This endpoint is helping authorities with their enquiries', sub: 'The live data feed is temporarily unavailable.' },
+            { emoji: '🗳️🤑', headline: 'The API vote went to Qatar; your request did not', sub: 'Couldn\'t load the match data this time.' },
+            { emoji: '🏝️💸', headline: 'The database is on an all-expenses-paid trip', sub: 'It\'ll be back once the "consultancy fees" clear.' },
+            { emoji: '📉🧾', headline: 'Our data provider is under investigation (again)', sub: 'The World Cup feed isn\'t responding.' },
+            { emoji: '🤐💶', headline: 'The server accepted a generous offer to stay quiet', sub: 'No response from the live data feed.' },
+            { emoji: '⚽💰', headline: 'Somewhere, a blazer just bought a new yacht', sub: 'Meanwhile, the API is completely offline.' },
+            { emoji: '🎁🏦', headline: 'Request denied — did you forget the "gift"?', sub: 'The data service is unavailable right now.' }
+        ];
+
+        function pickApiDownJoke() {
+            return API_DOWN_JOKES[Math.floor(Math.random() * API_DOWN_JOKES.length)];
+        }
+
+        function showErrorMessage(error) {
+            const loading = document.getElementById('loading');
+            const isApiError = error instanceof ApiError;
+            const statusNote = (isApiError && error.status)
+                ? `The live data feed returned HTTP ${error.status}.`
+                : 'Couldn\'t reach the live data feed.';
+
+            const joke = pickApiDownJoke();
+
+            // If it's a genuine network error (not an API status error) it *might*
+            // be that the page was opened directly from disk, so keep that hint —
+            // but only as a small secondary note.
+            const localHint = !isApiError
+                ? '<p style="font-size: 12px; opacity: 0.5; margin-top: 12px;">Running locally? Serve over HTTP: <code>python3 -m http.server 8000</code></p>'
+                : '';
+
+            loading.innerHTML = `
+                <div style="max-width: 400px; margin: 0 auto;">
+                    <div style="font-size: 2.5em; margin-bottom: 10px;">${joke.emoji}</div>
+                    <h3 style="margin-bottom: 8px;">${joke.headline}</h3>
+                    <p style="opacity: 0.75;">${joke.sub}</p>
+                    <p style="font-size: 12px; opacity: 0.6; margin-top: 10px;">${statusNote}</p>
+                    <button class="btn" style="margin-top: 16px;" onclick="refreshData()">🔄 Try again</button>
+                    ${localHint}
+                </div>
+            `;
+        }
+
+        function getTimeZoneOffsetMs(utcDate, timeZone) {
+            // Difference (in ms) between the wall-clock time shown in `timeZone`
+            // and UTC, for the given instant. Handles DST automatically via Intl.
+            const dtf = new Intl.DateTimeFormat('en-US', {
+                timeZone,
+                hour12: false,
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            });
+            const map = {};
+            for (const part of dtf.formatToParts(utcDate)) {
+                map[part.type] = part.value;
+            }
+            const hour = map.hour === '24' ? '00' : map.hour; // guard hourCycle quirk
+            const asUTC = Date.UTC(
+                Number(map.year), Number(map.month) - 1, Number(map.day),
+                Number(hour), Number(map.minute), Number(map.second)
+            );
+            return asUTC - utcDate.getTime();
+        }
+
+        function parseMatchDate(dateString, stadiumId) {
+            // Parse "06/11/2026 13:00" format.
+            // IMPORTANT: `local_date` is the STADIUM's local (wall-clock) kickoff
+            // time. Convert it from the venue's own timezone to a correct UTC
+            // instant so it can then be re-displayed in the user's chosen timezone.
             const [datePart, timePart] = dateString.split(' ');
-            const [month, day, year] = datePart.split('/');
-            const [hours, minutes] = timePart.split(':');
-            
-            // Create date object treating the time as MDT (UTC-6)
-            const utcHours = parseInt(hours) + 6; // Add 6 hours to convert MDT to UTC
-            const adjustedDay = utcHours >= 24 ? parseInt(day) + 1 : parseInt(day);
-            const finalHours = utcHours >= 24 ? utcHours - 24 : utcHours;
-            
-            const isoString = `${year}-${month.padStart(2, '0')}-${String(adjustedDay).padStart(2, '0')}T${String(finalHours).padStart(2, '0')}:${minutes.padStart(2, '0')}:00Z`;
-            return new Date(isoString);
+            const [month, day, year] = datePart.split('/').map(Number);
+            const [hours, minutes] = timePart.split(':').map(Number);
+
+            const timeZone = STADIUM_TIMEZONES[String(stadiumId)] || DEFAULT_VENUE_TIMEZONE;
+
+            // Treat the wall-clock components as if they were UTC, then subtract the
+            // venue's offset at that instant to recover the true UTC time.
+            const wallAsUtcMs = Date.UTC(year, month - 1, day, hours, minutes, 0);
+            const offsetMs = getTimeZoneOffsetMs(new Date(wallAsUtcMs), timeZone);
+            return new Date(wallAsUtcMs - offsetMs);
         }
 
         function getUserTimezone() {
@@ -420,9 +555,9 @@
             return selectedTimezone;
         }
 
-        function formatMatchTime(dateString) {
+        function formatMatchTime(dateString, stadiumId) {
             try {
-                const date = parseMatchDate(dateString);
+                const date = parseMatchDate(dateString, stadiumId);
                 const timezone = getUserTimezone();
                 
                 const options = { 
@@ -437,6 +572,32 @@
             } catch (e) {
                 console.error('Error formatting time:', e);
                 return dateString;
+            }
+        }
+
+        function formatMatchTimeParts(dateString, stadiumId) {
+            // Return the date and time as separate, compact strings so the label
+            // can be stacked on two short lines (much narrower than one long line,
+            // which greatly reduces overlap on small screens).
+            try {
+                const date = parseMatchDate(dateString, stadiumId);
+                const timezone = getUserTimezone();
+
+                const dateStr = date.toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    timeZone: timezone
+                });
+                const timeStr = date.toLocaleString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    timeZone: timezone
+                });
+
+                return { dateStr, timeStr };
+            } catch (e) {
+                console.error('Error formatting time:', e);
+                return { dateStr: dateString, timeStr: '' };
             }
         }
 
@@ -639,20 +800,94 @@
                                 <div class="score">${team1Code} ${match.home_score} - ${match.away_score} ${team2Code}</div>
                             `;
                         } else {
-                            // Upcoming match - show date/time
-                            timeDiv.textContent = formatMatchTime(match.local_date);
+                            // Upcoming match - show date/time on two compact lines
+                            const parts = formatMatchTimeParts(match.local_date, match.stadium_id);
+                            timeDiv.innerHTML = `
+                                <div class="date">${parts.dateStr}</div>
+                                <div class="time">${parts.timeStr}</div>
+                            `;
                         }
                         
-                        // Add offset to prevent overlapping on mobile
-                        // Alternate above and below the match point, with increasing offset
-                        const verticalOffset = (matchIdx % 2 === 0 ? 1 : -1) * (25 + (matchIdx % 4) * 5);
-                        
-                        timeDiv.style.left = mx + 'px';
-                        timeDiv.style.top = (my + verticalOffset) + 'px';
+                        // Prevent overlapping labels on small screens.
+                        // Neighbouring matches sit next to each other along the ring's
+                        // tangent, so their labels are separated along the radial
+                        // (perpendicular) direction instead of a fixed vertical offset.
+                        // Alternating inward/outward across a couple of distances creates
+                        // several concentric bands, so adjacent labels never sit at the
+                        // same position regardless of where they are on the wheel.
+                        const radialBands = [18, 38];
+                        const radialMagnitude = radialBands[Math.floor(matchIdx / 2) % radialBands.length];
+                        const radialDirection = (matchIdx % 2 === 0) ? -1 : 1; // inward vs outward
+                        const radialOffset = radialMagnitude * radialDirection;
+
+                        const labelX = mx + Math.cos(angleRad) * radialOffset;
+                        const labelY = my + Math.sin(angleRad) * radialOffset;
+
+                        timeDiv.style.left = labelX + 'px';
+                        timeDiv.style.top = labelY + 'px';
                         timesContainer.appendChild(timeDiv);
                     }
                 });
             });
+
+            // Final pass: guarantee no two labels overlap by nudging them apart
+            // vertically. The radial offset above is only a starting hint; this
+            // measures the real rendered boxes and resolves any remaining
+            // collisions (important on phones where the wheel is small).
+            resolveLabelOverlaps(timesContainer);
+        }
+
+        function resolveLabelOverlaps(container, iterations = 20) {
+            // Labels use transform: translate(-50%, -50%), so style.left/top is the
+            // centre of each box. We read the rendered width/height, detect pairs
+            // that overlap on both axes, and push them apart along the vertical
+            // axis (adding an offset to the heights) until they no longer collide.
+            const items = Array.from(container.children).map(el => ({
+                el,
+                x: parseFloat(el.style.left) || 0,
+                y: parseFloat(el.style.top) || 0,
+                w: el.offsetWidth || 40,
+                h: el.offsetHeight || 18
+            }));
+
+            if (items.length < 2) return;
+
+            const padY = 2; // minimum vertical gap between labels
+
+            for (let iter = 0; iter < iterations; iter++) {
+                let moved = false;
+
+                for (let i = 0; i < items.length; i++) {
+                    for (let j = i + 1; j < items.length; j++) {
+                        const a = items[i];
+                        const b = items[j];
+
+                        const minDx = (a.w + b.w) / 2;
+                        const minDy = (a.h + b.h) / 2 + padY;
+
+                        const dx = Math.abs(a.x - b.x);
+                        const dy = Math.abs(a.y - b.y);
+
+                        // Only a real collision if the boxes overlap on both axes.
+                        if (dx < minDx && dy < minDy) {
+                            const push = (minDy - dy) / 2 + 0.5;
+
+                            if (a.y <= b.y) {
+                                a.y -= push;
+                                b.y += push;
+                            } else {
+                                a.y += push;
+                                b.y -= push;
+                            }
+                            moved = true;
+                        }
+                    }
+                }
+
+                if (!moved) break;
+            }
+
+            items.forEach(it => { it.el.style.top = it.y + 'px'; });
         }
 
         function drawLine(svg, x1, y1, x2, y2, active) {
@@ -709,7 +944,10 @@
         }
 
         function refreshData() {
-            document.getElementById('loading').style.display = 'block';
+            const loading = document.getElementById('loading');
+            // Restore the spinner in case an error card is currently shown.
+            loading.innerHTML = '<div class="spinner"></div><div>Loading tournament data...</div>';
+            loading.style.display = 'block';
             document.getElementById('wheelContainer').style.display = 'none';
             fetchData();
         }
