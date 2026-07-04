@@ -559,14 +559,13 @@
 </head>
 <body>
     <div class="canada-timer" id="canadaTimer">
-        <div class="timer-header">🍁 Canada Matches</div>
-        <div class="timer-subtitle">Jodi timer</div>
+        <div class="timer-header">🏴󠁧󠁢󠁥󠁮󠁧󠁿 England Matches</div>
         <div id="canadaMatches"></div>
     </div>
 
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.6</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.7</div>
     </div>
 
     <div class="timezone-selector">
@@ -1165,21 +1164,18 @@
             const container = document.getElementById('canadaMatches');
             if (!container) return;
 
-            // Identify the Canada national team by FIFA code (fall back to name),
+            // Identify the England national team by FIFA code (fall back to name),
             // rather than relying on a hard-coded team id.
-            const canadaTeam = allTeams.find(t =>
-                (t.fifa_code && t.fifa_code.toUpperCase() === 'CAN') ||
-                (t.name_en && t.name_en.toLowerCase() === 'canada')
+            const englandTeam = allTeams.find(t =>
+                (t.fifa_code && t.fifa_code.toUpperCase() === 'ENG') ||
+                (t.name_en && t.name_en.toLowerCase() === 'england')
             );
-            const canadaId = canadaTeam ? String(canadaTeam.id) : null;
+            const englandId = englandTeam ? String(englandTeam.id) : null;
 
-            // Upcoming matches that FEATURE Canada — not matches merely played at a
-            // Canadian venue. (The old logic filtered by stadium, so e.g. a Vancouver
-            // game like "SUI vs TBD" showed up while Canada's actual next game,
-            // played in Houston, was hidden.)
-            const canadaMatches = (canadaId ? allMatches : [])
+            // Upcoming matches that FEATURE England
+            const englandMatches = (englandId ? allMatches : [])
                 .filter(m =>
-                    (String(m.home_team_id) === canadaId || String(m.away_team_id) === canadaId) &&
+                    (String(m.home_team_id) === englandId || String(m.away_team_id) === englandId) &&
                     m.finished !== 'TRUE' &&
                     m.time_elapsed !== 'finished'
                 )
@@ -1194,7 +1190,7 @@
                 .filter(m => m !== null)
                 .sort((a, b) => a.parsedDate - b.parsedDate);
 
-            if (canadaMatches.length === 0) {
+            if (englandMatches.length === 0) {
                 container.innerHTML = '<div class="no-matches">No upcoming matches</div>';
                 return;
             }
@@ -1216,15 +1212,15 @@
 
             let html = '';
             
-            // Show up to 5 upcoming Canadian matches
-            canadaMatches.slice(0, 5).forEach(match => {
+            // Show up to 5 upcoming England matches
+            englandMatches.slice(0, 5).forEach(match => {
                 const team1 = allTeams.find(t => t.id === match.home_team_id);
                 const team2 = allTeams.find(t => t.id === match.away_team_id);
                 
                 const team1Name = team1 ? (team1.fifa_code || team1.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
                 const team2Name = team2 ? (team2.fifa_code || team2.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
                 
-                // If Canada's match is in progress, show the live score instead of
+                // If England's match is in progress, show the live score instead of
                 // the kickoff time. A match is live when it has started but isn't
                 // finished (time_elapsed is neither 'notstarted' nor 'finished').
                 const isLive = match.time_elapsed !== 'notstarted' &&
@@ -1542,7 +1538,7 @@
             // collisions (important on phones where the wheel is small).
             resolveLabelOverlaps(timesContainer);
 
-            // Update the Canada timer
+            // Update the England timer
             updateCanadaTimer();
 
             // Fill the centre with the champion (winner of the final), or an empty
