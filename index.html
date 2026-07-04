@@ -500,14 +500,13 @@
 </head>
 <body>
     <div class="canada-timer" id="canadaTimer">
-        <div class="timer-header">🍁 Canada Matches</div>
-        <div class="timer-subtitle">Jodi timer</div>
+        <div class="timer-header">🏴󠁧󠁢󠁥󠁮󠁧󠁿 England Matches</div>
         <div id="canadaMatches"></div>
     </div>
 
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.1</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.2</div>
     </div>
 
     <div class="timezone-selector">
@@ -1058,13 +1057,21 @@
             const container = document.getElementById('canadaMatches');
             if (!container) return;
 
-            // Canadian stadium IDs: Toronto (12) and Vancouver (13)
-            const canadianStadiumIds = ['12', '13'];
+            // Find England's team ID
+            const englandTeam = allTeams.find(t => 
+                t.fifa_code === 'ENG' || 
+                t.name_en === 'England'
+            );
             
-            // Get Canadian matches that haven't finished
-            const canadaMatches = allMatches
+            if (!englandTeam) {
+                container.innerHTML = '<div class="no-matches">Team data loading...</div>';
+                return;
+            }
+            
+            // Get England matches that haven't finished
+            const englandMatches = allMatches
                 .filter(m => 
-                    canadianStadiumIds.includes(String(m.stadium_id)) &&
+                    (m.home_team_id === englandTeam.id || m.away_team_id === englandTeam.id) &&
                     m.finished !== 'TRUE' &&
                     m.time_elapsed !== 'finished'
                 )
@@ -1079,7 +1086,7 @@
                 .filter(m => m !== null)
                 .sort((a, b) => a.parsedDate - b.parsedDate);
 
-            if (canadaMatches.length === 0) {
+            if (englandMatches.length === 0) {
                 container.innerHTML = '<div class="no-matches">No upcoming matches</div>';
                 return;
             }
@@ -1116,8 +1123,8 @@
 
             let html = '';
             
-            // Show up to 5 upcoming Canadian matches
-            canadaMatches.slice(0, 5).forEach(match => {
+            // Show up to 5 upcoming England matches
+            englandMatches.slice(0, 5).forEach(match => {
                 const team1 = allTeams.find(t => t.id === match.home_team_id);
                 const team2 = allTeams.find(t => t.id === match.away_team_id);
                 
@@ -1397,7 +1404,7 @@
             // collisions (important on phones where the wheel is small).
             resolveLabelOverlaps(timesContainer);
 
-            // Update the Canada timer
+            // Update the England timer
             updateCanadaTimer();
         }
 
