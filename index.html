@@ -559,13 +559,13 @@
 </head>
 <body>
     <div class="canada-timer" id="canadaTimer">
-        <div class="timer-header">🏴󠁧󠁢󠁥󠁮󠁧󠁿 England Matches</div>
+        <div class="timer-header">⚽ Next Game</div>
         <div id="canadaMatches"></div>
     </div>
 
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.7</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.8</div>
     </div>
 
     <div class="timezone-selector">
@@ -1164,20 +1164,44 @@
             const container = document.getElementById('canadaMatches');
             if (!container) return;
 
-            // Identify the England national team by FIFA code (fall back to name),
-            // rather than relying on a hard-coded team id.
-            const englandTeam = allTeams.find(t =>
-                (t.fifa_code && t.fifa_code.toUpperCase() === 'ENG') ||
-                (t.name_en && t.name_en.toLowerCase() === 'england')
+            // Check for any live match first
+            const liveMatch = allMatches.find(m =>
+                m.time_elapsed !== 'notstarted' &&
+                m.time_elapsed !== 'finished' &&
+                m.finished !== 'TRUE'
             );
-            const englandId = englandTeam ? String(englandTeam.id) : null;
 
-            // Upcoming matches that FEATURE England
-            const englandMatches = (englandId ? allMatches : [])
+            // If there's a live match, show it
+            if (liveMatch) {
+                const team1 = allTeams.find(t => t.id === liveMatch.home_team_id);
+                const team2 = allTeams.find(t => t.id === liveMatch.away_team_id);
+                
+                const team1Name = team1 ? (team1.fifa_code || team1.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
+                const team2Name = team2 ? (team2.fifa_code || team2.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
+                
+                const scoreLine = `${team1Name} ${liveMatch.home_score} - ${liveMatch.away_score} ${team2Name}`;
+                const elapsedRaw = String(liveMatch.time_elapsed);
+                const elapsed = /^\d+$/.test(elapsedRaw) ? `${elapsedRaw}'` : elapsedRaw;
+                
+                container.innerHTML = `
+                    <div class="timer-match live">
+                        <div class="match-row">
+                            <div class="match-teams">${scoreLine}</div>
+                            <div class="match-meta">
+                                <span class="match-when live">🔴 LIVE</span>
+                                <span class="match-kickoff">${elapsed}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            // No live match, find the next upcoming match
+            const upcomingMatches = allMatches
                 .filter(m =>
-                    (String(m.home_team_id) === englandId || String(m.away_team_id) === englandId) &&
                     m.finished !== 'TRUE' &&
-                    m.time_elapsed !== 'finished'
+                    m.time_elapsed === 'notstarted'
                 )
                 .map(m => {
                     try {
@@ -1190,11 +1214,13 @@
                 .filter(m => m !== null)
                 .sort((a, b) => a.parsedDate - b.parsedDate);
 
-            if (englandMatches.length === 0) {
+            if (upcomingMatches.length === 0) {
                 container.innerHTML = '<div class="no-matches">No upcoming matches</div>';
                 return;
             }
 
+            // Show only the next match
+            const nextMatch = upcomingMatches[0];
             const userTz = getUserTimezone();
 
             // Return the calendar date (as a UTC-midnight timestamp) that a given
@@ -1210,89 +1236,57 @@
             };
             const todayNum = dayNumberInTz(new Date(), userTz);
 
-            let html = '';
+            const team1 = allTeams.find(t => t.id === nextMatch.home_team_id);
+            const team2 = allTeams.find(t => t.id === nextMatch.away_team_id);
             
-            // Show up to 5 upcoming England matches
-            englandMatches.slice(0, 5).forEach(match => {
-                const team1 = allTeams.find(t => t.id === match.home_team_id);
-                const team2 = allTeams.find(t => t.id === match.away_team_id);
-                
-                const team1Name = team1 ? (team1.fifa_code || team1.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
-                const team2Name = team2 ? (team2.fifa_code || team2.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
-                
-                // If England's match is in progress, show the live score instead of
-                // the kickoff time. A match is live when it has started but isn't
-                // finished (time_elapsed is neither 'notstarted' nor 'finished').
-                const isLive = match.time_elapsed !== 'notstarted' &&
-                               match.time_elapsed !== 'finished' &&
-                               match.finished !== 'TRUE';
-
-                if (isLive) {
-                    const scoreLine = `${team1Name} ${match.home_score} - ${match.away_score} ${team2Name}`;
-                    const elapsedRaw = String(match.time_elapsed);
-                    const elapsed = /^\d+$/.test(elapsedRaw) ? `${elapsedRaw}'` : elapsedRaw;
-                    html += `
-                        <div class="timer-match live">
-                            <div class="match-row">
-                                <div class="match-teams">${scoreLine}</div>
-                                <div class="match-meta">
-                                    <span class="match-when live">🔴 LIVE</span>
-                                    <span class="match-kickoff">${elapsed}</span>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    return;
-                }
-
-                const teams = `${team1Name} vs ${team2Name}`;
-                
-                // Format the match time in user's timezone
-                const matchTimeStr = match.parsedDate.toLocaleString('en-US', {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    timeZone: userTz
-                });
-                
-                // Whole-day difference between the match date and today, both taken
-                // in the user's timezone.
-                const dayDiff = Math.round(
-                    (dayNumberInTz(match.parsedDate, userTz) - todayNum) / 86400000
-                );
-
-                let whenLabel = '';
-                let whenClass = '';
-
-                if (dayDiff === 0) {
-                    whenLabel = 'Today';
-                    whenClass = 'today';
-                } else if (dayDiff === 1) {
-                    whenLabel = 'Tomorrow';
-                    whenClass = 'tomorrow';
-                } else {
-                    // For matches beyond tomorrow (or in the past), show the date.
-                    whenLabel = match.parsedDate.toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        timeZone: userTz
-                    });
-                    whenClass = '';
-                }
-                
-                html += `
-                    <div class="timer-match">
-                        <div class="match-row">
-                            <div class="match-teams">${teams}</div>
-                            <div class="match-meta">
-                                <span class="match-when ${whenClass}">${whenLabel}</span>
-                                <span class="match-kickoff">${matchTimeStr}</span>
-                            </div>
-                        </div>
-                    </div>
-                `;
+            const team1Name = team1 ? (team1.fifa_code || team1.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
+            const team2Name = team2 ? (team2.fifa_code || team2.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
+            
+            const teams = `${team1Name} vs ${team2Name}`;
+            
+            // Format the match time in user's timezone
+            const matchTimeStr = nextMatch.parsedDate.toLocaleString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                timeZone: userTz
             });
             
-            container.innerHTML = html;
+            // Whole-day difference between the match date and today, both taken
+            // in the user's timezone.
+            const dayDiff = Math.round(
+                (dayNumberInTz(nextMatch.parsedDate, userTz) - todayNum) / 86400000
+            );
+
+            let whenLabel = '';
+            let whenClass = '';
+
+            if (dayDiff === 0) {
+                whenLabel = 'Today';
+                whenClass = 'today';
+            } else if (dayDiff === 1) {
+                whenLabel = 'Tomorrow';
+                whenClass = 'tomorrow';
+            } else {
+                // For matches beyond tomorrow, show the date.
+                whenLabel = nextMatch.parsedDate.toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    timeZone: userTz
+                });
+                whenClass = '';
+            }
+            
+            container.innerHTML = `
+                <div class="timer-match">
+                    <div class="match-row">
+                        <div class="match-teams">${teams}</div>
+                        <div class="match-meta">
+                            <span class="match-when ${whenClass}">${whenLabel}</span>
+                            <span class="match-kickoff">${matchTimeStr}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
         }
 
         function renderWheel() {
@@ -1538,7 +1532,7 @@
             // collisions (important on phones where the wheel is small).
             resolveLabelOverlaps(timesContainer);
 
-            // Update the England timer
+            // Update the next game timer
             updateCanadaTimer();
 
             // Fill the centre with the champion (winner of the final), or an empty
