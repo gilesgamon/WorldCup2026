@@ -565,7 +565,7 @@
 
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.8</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.9</div>
     </div>
 
     <div class="timezone-selector">
@@ -680,20 +680,20 @@
         // Rotated so semi-finals are horizontal (0° and 180°)
         const KNOCKOUT_POSITIONS = {
             r32: [
-                // 16 matches, 32 teams - outer ring
-                {angle: -78.75}, {angle: -56.25}, {angle: -33.75}, {angle: -11.25},
+                // 16 matches, 32 teams - outer ring (rotated 90° clockwise)
                 {angle: 11.25}, {angle: 33.75}, {angle: 56.25}, {angle: 78.75},
                 {angle: 101.25}, {angle: 123.75}, {angle: 146.25}, {angle: 168.75},
-                {angle: 191.25}, {angle: 213.75}, {angle: 236.25}, {angle: 258.75}
+                {angle: 191.25}, {angle: 213.75}, {angle: 236.25}, {angle: 258.75},
+                {angle: 281.25}, {angle: 303.75}, {angle: 326.25}, {angle: 348.75}
             ],
             r16: [
-                // 8 matches - second ring
-                {angle: -67.5}, {angle: -22.5}, {angle: 22.5}, {angle: 67.5},
-                {angle: 112.5}, {angle: 157.5}, {angle: 202.5}, {angle: 247.5}
+                // 8 matches - second ring (rotated 90° clockwise)
+                {angle: 22.5}, {angle: 67.5}, {angle: 112.5}, {angle: 157.5},
+                {angle: 202.5}, {angle: 247.5}, {angle: 292.5}, {angle: 337.5}
             ],
             qf: [
-                // 4 matches - third ring
-                {angle: -45}, {angle: 45}, {angle: 135}, {angle: 225}
+                // 4 matches - third ring (rotated 90° clockwise)
+                {angle: 45}, {angle: 135}, {angle: 225}, {angle: 315}
             ],
             sf: [
                 // 2 matches - inner ring (horizontal: 90° = right, 270° = left after -90 offset)
