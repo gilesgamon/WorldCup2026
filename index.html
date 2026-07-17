@@ -565,7 +565,7 @@
 
     <div class="header">
         <h1>🏆 FIFA World Cup 2026</h1>
-        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.6.9</div>
+        <div style="font-size: 0.8em; opacity: 0.5; margin-top: 5px;">v1.7.0</div>
     </div>
 
     <div class="timezone-selector">
@@ -1160,6 +1160,51 @@
             return rounds;
         }
 
+        // Resolve "Winner Match X" or "Loser Match X" labels to actual team info
+        function resolveTeamFromLabel(label) {
+            if (!label) return null;
+            
+            const winnerMatch = label.match(/Winner\s+Match\s+(\d+)/i);
+            const loserMatch = label.match(/Loser\s+Match\s+(\d+)/i);
+            
+            if (winnerMatch || loserMatch) {
+                const matchId = winnerMatch ? winnerMatch[1] : loserMatch[1];
+                const isWinner = !!winnerMatch;
+                
+                // Find the referenced match
+                const refMatch = allMatches.find(m => String(m.id) === String(matchId));
+                if (!refMatch || refMatch.finished !== 'TRUE') {
+                    return null;
+                }
+                
+                // Determine winner/loser
+                const homeScore = parseInt(refMatch.home_score) || 0;
+                const awayScore = parseInt(refMatch.away_score) || 0;
+                
+                let teamId;
+                if (homeScore > awayScore) {
+                    teamId = isWinner ? refMatch.home_team_id : refMatch.away_team_id;
+                } else if (awayScore > homeScore) {
+                    teamId = isWinner ? refMatch.away_team_id : refMatch.home_team_id;
+                } else {
+                    // Draw - check for penalty shootout
+                    const homePenalty = parseInt(refMatch.home_penalty_score) || 0;
+                    const awayPenalty = parseInt(refMatch.away_penalty_score) || 0;
+                    if (homePenalty > awayPenalty) {
+                        teamId = isWinner ? refMatch.home_team_id : refMatch.away_team_id;
+                    } else if (awayPenalty > homePenalty) {
+                        teamId = isWinner ? refMatch.away_team_id : refMatch.home_team_id;
+                    } else {
+                        return null; // Can't determine
+                    }
+                }
+                
+                return allTeams.find(t => String(t.id) === String(teamId));
+            }
+            
+            return null;
+        }
+
         function updateCanadaTimer() {
             const container = document.getElementById('canadaMatches');
             if (!container) return;
@@ -1173,8 +1218,12 @@
 
             // If there's a live match, show it
             if (liveMatch) {
-                const team1 = allTeams.find(t => t.id === liveMatch.home_team_id);
-                const team2 = allTeams.find(t => t.id === liveMatch.away_team_id);
+                let team1 = allTeams.find(t => t.id === liveMatch.home_team_id);
+                let team2 = allTeams.find(t => t.id === liveMatch.away_team_id);
+                
+                // Resolve from labels if team IDs are 0 or missing
+                if (!team1) team1 = resolveTeamFromLabel(liveMatch.home_team_label);
+                if (!team2) team2 = resolveTeamFromLabel(liveMatch.away_team_label);
                 
                 const team1Name = team1 ? (team1.fifa_code || team1.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
                 const team2Name = team2 ? (team2.fifa_code || team2.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
@@ -1236,8 +1285,12 @@
             };
             const todayNum = dayNumberInTz(new Date(), userTz);
 
-            const team1 = allTeams.find(t => t.id === nextMatch.home_team_id);
-            const team2 = allTeams.find(t => t.id === nextMatch.away_team_id);
+            let team1 = allTeams.find(t => t.id === nextMatch.home_team_id);
+            let team2 = allTeams.find(t => t.id === nextMatch.away_team_id);
+            
+            // Resolve from labels if team IDs are 0 or missing
+            if (!team1) team1 = resolveTeamFromLabel(nextMatch.home_team_label);
+            if (!team2) team2 = resolveTeamFromLabel(nextMatch.away_team_label);
             
             const team1Name = team1 ? (team1.fifa_code || team1.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
             const team2Name = team2 ? (team2.fifa_code || team2.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
@@ -1458,8 +1511,12 @@
                     }
 
                     // Create team flags - place teams where they actually appear in THIS match
-                    const team1 = allTeams.find(t => t.id === match.home_team_id);
-                    const team2 = allTeams.find(t => t.id === match.away_team_id);
+                    let team1 = allTeams.find(t => t.id === match.home_team_id);
+                    let team2 = allTeams.find(t => t.id === match.away_team_id);
+                    
+                    // Resolve from labels if team IDs are 0 or missing
+                    if (!team1) team1 = resolveTeamFromLabel(match.home_team_label);
+                    if (!team2) team2 = resolveTeamFromLabel(match.away_team_label);
 
                     if (team1) {
                         createFlag(flagsContainer, team1, t1x, t1y, match, 'home');
@@ -1486,8 +1543,13 @@
                             // Live match - show score
                             timeDiv.classList.add('live');
                             
-                            const team1 = allTeams.find(t => t.id === match.home_team_id);
-                            const team2 = allTeams.find(t => t.id === match.away_team_id);
+                            let team1 = allTeams.find(t => t.id === match.home_team_id);
+                            let team2 = allTeams.find(t => t.id === match.away_team_id);
+                            
+                            // Resolve from labels if team IDs are 0 or missing
+                            if (!team1) team1 = resolveTeamFromLabel(match.home_team_label);
+                            if (!team2) team2 = resolveTeamFromLabel(match.away_team_label);
+                            
                             const team1Code = team1 ? (team1.fifa_code || team1.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
                             const team2Code = team2 ? (team2.fifa_code || team2.name_en?.substring(0, 3).toUpperCase()) : 'TBD';
                             
@@ -1547,9 +1609,30 @@
             const finalMatch = allMatches.find(m => m.type === 'final');
             let champion = null;
             if (finalMatch && finalMatch.finished === 'TRUE') {
-                const homeWon = parseInt(finalMatch.home_score) > parseInt(finalMatch.away_score);
-                const winnerId = homeWon ? finalMatch.home_team_id : finalMatch.away_team_id;
-                champion = allTeams.find(t => t.id === winnerId) || null;
+                const homeScore = parseInt(finalMatch.home_score) || 0;
+                const awayScore = parseInt(finalMatch.away_score) || 0;
+                
+                let winnerId;
+                if (homeScore > awayScore) {
+                    winnerId = finalMatch.home_team_id;
+                } else if (awayScore > homeScore) {
+                    winnerId = finalMatch.away_team_id;
+                } else {
+                    // Check penalties
+                    const homePenalty = parseInt(finalMatch.home_penalty_score) || 0;
+                    const awayPenalty = parseInt(finalMatch.away_penalty_score) || 0;
+                    winnerId = homePenalty > awayPenalty ? finalMatch.home_team_id : finalMatch.away_team_id;
+                }
+                
+                champion = allTeams.find(t => t.id === winnerId);
+                
+                // If no team found by ID, try resolving from labels
+                if (!champion) {
+                    const homeWon = homeScore > awayScore || 
+                                   (homeScore === awayScore && parseInt(finalMatch.home_penalty_score || 0) > parseInt(finalMatch.away_penalty_score || 0));
+                    const label = homeWon ? finalMatch.home_team_label : finalMatch.away_team_label;
+                    champion = resolveTeamFromLabel(label);
+                }
             }
 
             if (champion) {
